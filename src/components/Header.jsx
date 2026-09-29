@@ -240,7 +240,10 @@ export function Header({
                     </div>
                   )}
                   {/* <div className="hidden xl:flex"> */}
-                  <NetworkSelector onDisconnectClick={onDisconnectClick} />
+                  <NetworkSelector
+                    onDisconnectClick={onDisconnectClick}
+                    baseNetworkOnly
+                  />
                   {/* </div> */}
                   <div className="pe-2 xl:flex items-center gap-2">
                     <span
