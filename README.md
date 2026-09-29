@@ -1,0 +1,34 @@
+# AlloX dApp
+
+A Web3 points and rewards dashboard built on **BNB Chain (BSC)** and compatible with other EVM networks, featuring wallet connectivity via **WalletConnect**, **MetaMask**, and other standard wallets.
+
+## Technology Stack
+
+- **Blockchain**: BNB Chain + EVM-compatible chains
+- **Wallet connectivity:** [Wagmi](https://wagmi.sh) v3 + [WalletConnect](https://walletconnect.com/) + [MetaMask Connect](https://docs.metamask.io/metamask-connect/)
+- **Smart Contracts**: Solidity ^0.8.x
+- **Frontend**: React + ethers.js + wagmi / viem
+- **Development**: Hardhat, OpenZeppelin libraries
+
+## Supported Networks
+
+- **BNB Chain Mainnet** (Chain ID: 56)
+- **Ethereum Mainnet** (Chain ID: 1)
+- **Base Mainnet** (Chain ID: 8453)
+
+## Contract Addresses
+
+| Network          | Check-in Contract Address                    |
+| ---------------- | -------------------------------------------- |
+| Base Mainnet     | `0x43be8192363899B853a98661e2ea6451940e27e3` |
+| Ethereum Mainnet | `0x43be8192363899b853a98661e2ea6451940e27e3` |
+| BNB Mainnet      | `0x43be8192363899b853a98661e2ea6451940e27e3` |
+
+> **Note**: These addresses correspond to the deployed check-in contracts on each supported network.
+
+## Features
+
+- **BNB Wallet SDK integration**: Native integration with the **BNB Wallet SDK** for secure, seamless wallet connections, transaction signing, and account management directly in the dApp.
+- **Points and rewards system**: Users can earn points through activities such as welcome bonuses, daily check-ins, portfolio creation, AI chat interactions, and more.
+- **Engagement-focused UX**: Modern, responsive UI with a points dashboard, activity cards, and clear progress tracking to encourage on-chain activity.
+- **Multi-network readiness**: Designed to support BNB Chain (mainnet and testnet) and other EVM networks with minimal configuration changes.

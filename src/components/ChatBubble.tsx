@@ -1,0 +1,27 @@
+import { ReactNode } from 'react';
+
+interface ChatBubbleProps {
+  type: 'user' | 'ai';
+  children: ReactNode;
+  className?: string;
+}
+
+export function ChatBubble({ type, children, className = '' }: ChatBubbleProps) {
+  if (type === 'user') {
+    return (
+      <div className={`flex justify-end w-full ${className}`}>
+        <div className="bg-black text-white px-5 py-3 rounded-2xl rounded-tr-sm max-w-[85%] [&_p]:text-white [&_strong]:text-white [&_ul]:text-white [&_li]:text-white [&_table]:text-white">
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex justify-start relative left-wrapper ${className}`}>
+      <div className="bg-white/60 backdrop-blur-sm border border-gray-200/50 px-5 py-3 rounded-2xl rounded-tl-sm max-w-[80%]">
+        {children}
+      </div>
+    </div>
+  );
+}

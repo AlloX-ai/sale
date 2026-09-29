@@ -1,0 +1,513 @@
+import React, { useState } from "react";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+import OutsideClickHandler from "react-outside-click-handler";
+import { toast } from "../utils/toast";
+import { setAddress, setChainId, setIsConnected, setWalletType } from "../redux/slices/walletSlice";
+import { connect, disconnect, getAccount } from "@wagmi/core";
+import { wagmiClient } from "../wagmiConnectors";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useSwitchChain, useConnection } from "wagmi";
+import { useWallets } from "@privy-io/react-auth";
+import {
+  getPrivyEmbedded,
+  switchPrivyEmbeddedToChain,
+} from "../utils/privyWalletUtils";
+import { persistWalletType } from "../utils/walletPersistence";
+
+const PREFERRED_CHAIN_STORAGE_KEY = "walletPreferredChainId";
+const SOLANA_CHAIN_ID = 101;
+
+type NetworkOption = {
+  name: string;
+  icon: string;
+  chainId: number;
+  chainHex: string;
+  chainName: string;
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+};
+
+type NetworkSelectorProps = {
+  onDisconnectClick: () => void;
+};
+
+export function NetworkSelector({ onDisconnectClick }: NetworkSelectorProps) {
+  const dispatch = useDispatch();
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const chainId = useSelector((state: any) => state.wallet.chainId);
+  const walletType = useSelector((state: any) => state.wallet.walletType);
+  const {
+    connected: solanaConnected,
+    publicKey: solanaPublicKey,
+    wallet: solanaWallet,
+    disconnect: disconnectSolanaWallet,
+  } = useWallet();
+  const sessionSource = useSelector((state: any) => state.wallet.sessionSource);
+  const { wallets } = useWallets();
+  const { connector } = useConnection();
+  const switchChain = useSwitchChain();
+
+  const embeddedWallet = getPrivyEmbedded(wallets);
+  const privySwitchWallet =
+    embeddedWallet ??
+    (wallets as any[])?.find((w) => w.walletClientType === "privy" && !!w.switchChain) ??
+    null;
+  const isPrivySession =
+    sessionSource === "privy" ||
+    walletType === "privy" ||
+    !!privySwitchWallet;
+  const errorNetwork: NetworkOption[] = [
+    {
+      name: "",
+      icon: "https://cdn.allox.ai/allox/networks/error.svg",
+      chainId: 0,
+      chainHex: "0",
+      chainName: "0",
+      rpcUrls: [""],
+      blockExplorerUrls: [""],
+      nativeCurrency: { name: "", symbol: "", decimals: 1 },
+    },
+  ]
+  const networks: NetworkOption[] = [
+
+    {
+      name: 'Ethereum',
+      icon: 'https://cdn.allox.ai/allox/networks/eth.svg',
+      chainId: 1,
+      chainHex: '0x1',
+      chainName: 'Ethereum Mainnet',
+      rpcUrls: ['https://cloudflare-eth.com'],
+      blockExplorerUrls: ['https://etherscan.io'],
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    },
+    {
+      name: 'BNB Chain',
+      icon: 'https://cdn.allox.ai/allox/networks/bnbIcon.svg',
+      chainId: 56,
+      chainHex: '0x38',
+      chainName: 'BNB Chain',
+      rpcUrls: ['https://bsc-dataseed.binance.org'],
+      blockExplorerUrls: ['https://bscscan.com'],
+      nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    },
+    {
+      name: "Base",
+      icon: "https://cdn.allox.ai/allox/networks/base.svg",
+      chainId: 8453,
+      chainHex: "0x2105",
+      chainName: "Base",
+      rpcUrls: ["https://mainnet.base.org"],
+      blockExplorerUrls: ["https://basescan.org"],
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    },
+    {
+      name: "Robinhood Chain",
+      icon: "https://cdn.allox.ai/allox/networks/robinhoodChain.png",
+      chainId: 4663,
+      chainHex: "0x1237",
+      chainName: "Robinhood Chain",
+      rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
+      blockExplorerUrls: ["https://robinhoodchain.blockscout.com"],
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    },
+    {
+      name: "Solana",
+      icon: "https://cdn.allox.ai/allox/networks/solana.svg",
+      chainId: 101,
+      chainHex: "0x65",
+      chainName: "Solana Mainnet",
+      rpcUrls: ["https://api.mainnet-beta.solana.com"],
+      blockExplorerUrls: ["https://explorer.solana.com"],
+      nativeCurrency: { name: "SOL", symbol: "SOL", decimals: 9 },
+    },
+  ];
+
+  const selectedNetwork =
+    networks.find((network) => network.chainId === chainId) ?? errorNetwork[0];
+
+  const isMetaMaskSolanaWallet = () =>
+    solanaWallet?.adapter?.name?.toLowerCase?.().includes("metamask") ?? false;
+
+  /** MetaMask Solana via QR/mobile has no window.ethereum — use wagmi MetaMask Connect. */
+  const switchSolanaToEvmViaMetaMaskConnect = async (network: NetworkOption) => {
+    setSwitching(true);
+    setIsSwitching(true);
+    try {
+      const metaMaskConnector = wagmiClient.connectors.find((c) =>
+        c.name?.toLowerCase().includes("metamask"),
+      );
+      if (!metaMaskConnector) {
+        toast.error("MetaMask connector not available.");
+        return;
+      }
+
+      if (solanaConnected) {
+        try {
+          await disconnectSolanaWallet();
+        } catch (e) {
+          console.warn("Solana disconnect before EVM:", e);
+        }
+      }
+
+      const existing = getAccount(wagmiClient);
+      const alreadyMetaMask =
+        existing?.connector?.name?.toLowerCase?.().includes("metamask") &&
+        existing?.status === "connected";
+
+      if (!alreadyMetaMask) {
+        await connect(wagmiClient, { connector: metaMaskConnector });
+      } else if (switchChain.mutateAsync) {
+        await switchChain.mutateAsync({ chainId: network.chainId });
+      }
+
+      const account = getAccount(wagmiClient);
+      if (
+        account?.status === "connected" &&
+        switchChain.mutateAsync &&
+        account.chainId !== network.chainId
+      ) {
+        await switchChain.mutateAsync({ chainId: network.chainId });
+      }
+
+      if (account?.address) {
+        dispatch(setAddress(account.address));
+        dispatch(setWalletType("metamask"));
+        persistWalletType("metamask");
+        dispatch(setIsConnected(true));
+      }
+      dispatch(setChainId(network.chainId));
+      localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+      setIsOpen(false);
+    } catch (error) {
+      console.error("MetaMask Solana → EVM switch:", error);
+      toast.error(
+        "Failed to switch network. Approve the connection in MetaMask.",
+      );
+    } finally {
+      setSwitching(false);
+      setIsSwitching(false);
+    }
+  };
+
+  const handleSwitchNetwork = async (network: NetworkOption) => {
+    // Already on Solana — just ensure chain state is correct
+    if (network.name === "Solana") {
+      localStorage.setItem(PREFERRED_CHAIN_STORAGE_KEY, String(SOLANA_CHAIN_ID));
+      dispatch(setChainId(SOLANA_CHAIN_ID));
+      setIsOpen(false);
+      return;
+    }
+
+    if (
+      walletType === "solana" &&
+      !isPrivySession &&
+      isMetaMaskSolanaWallet()
+    ) {
+      await switchSolanaToEvmViaMetaMaskConnect(network);
+      return;
+    }
+
+    // Switching from Solana to an EVM network.
+    // Phantom exposes an EVM provider at window.phantom.ethereum; fall back to window.ethereum.
+    const evmProvider = (window as any).phantom?.ethereum ?? (window as any).ethereum;
+    if (!evmProvider && walletType === "solana" && !isPrivySession) {
+      toast.error("No EVM wallet detected. Connect a wallet that supports EVM (e.g. Phantom, MetaMask).");
+      setIsOpen(false);
+      return;
+    }
+
+    setSwitching(true);
+    setIsSwitching(true);
+    try {
+      // Ask the wallet to switch chain first
+      try {
+        await evmProvider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: network.chainHex }],
+        });
+      } catch (switchErr) {
+        const switchError = switchErr as { code?: number };
+        if (switchError?.code === 4902) {
+          // Chain not added — add it, then switch
+          await evmProvider.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: network.chainHex,
+              chainName: network.chainName,
+              rpcUrls: network.rpcUrls,
+              blockExplorerUrls: network.blockExplorerUrls,
+              nativeCurrency: network.nativeCurrency,
+            }],
+          });
+          await evmProvider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: network.chainHex }],
+          });
+        } else {
+          throw switchErr;
+        }
+      }
+
+      // Request accounts to get the EVM address
+      const accounts: string[] = await evmProvider.request({ method: "eth_requestAccounts" });
+      const evmAddress = accounts?.[0];
+
+      // Connect wagmi to the injected (Phantom EVM) connector
+      const injectedConnector = wagmiClient.connectors.find(
+        (c: { name: string; id: string }) =>
+          c.name?.toLowerCase().includes("phantom") || c.id === "injected",
+      );
+      if (injectedConnector) {
+        const existing = getAccount(wagmiClient);
+        if (existing?.status !== "connected") {
+          try {
+            await connect(wagmiClient, { connector: injectedConnector });
+          } catch (e) {
+            // already connected or user dismissed — non-fatal
+          }
+        }
+      }
+      dispatch(setChainId(network.chainId));
+      setIsOpen(false);
+    } catch (error) {
+      const walletError = error as { code?: number };
+      if (walletError?.code === 4902 && connector) {
+        try {
+          const provider: any = await connector.getProvider();
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: network.chainHex,
+                chainName: network.chainName,
+                rpcUrls: network.rpcUrls,
+                blockExplorerUrls: network.blockExplorerUrls,
+                nativeCurrency: network.nativeCurrency,
+              },
+            ],
+          });
+          const metaMaskConnector = wagmiClient.connectors.find(
+            (c) => c.name?.toLowerCase().includes("metamask"),
+          );
+          if (metaMaskConnector) {
+            const existingAccount = getAccount(wagmiClient);
+            const alreadyMetaMask =
+              existingAccount?.connector?.name?.toLowerCase?.().includes("metamask") &&
+              existingAccount?.status === "connected";
+            if (!alreadyMetaMask) {
+              await connect(wagmiClient, { connector: metaMaskConnector });
+            }
+            const account = getAccount(wagmiClient);
+            if (account?.address) {
+              dispatch(setAddress(account.address));
+              dispatch(setWalletType("evm"));
+              persistWalletType("evm");
+              dispatch(setIsConnected(true));
+            }
+          }
+          dispatch(setChainId(network.chainId));
+          setIsOpen(false);
+        } catch (addErr) {
+          console.error("Add network error:", addErr);
+          toast.error("Failed to add or switch network.");
+        }
+      }
+      setIsOpen(false);
+    }  finally {
+      setSwitching(false);
+      setIsSwitching(false);
+    }
+  }
+
+  const switchPrivyEVMChain = async (network: NetworkOption) => {
+    if (!privySwitchWallet?.switchChain) {
+      toast.error("Embedded wallet not ready. Refresh the page or sign in again.");
+      return;
+    }
+    try {
+      setIsSwitching(true);
+      await switchPrivyEmbeddedToChain(privySwitchWallet, network.chainId);
+      dispatch(setChainId(network.chainId));
+      localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+      setIsOpen(false);
+    } catch (error) {
+      console.error("Privy network switch error:", error);
+      toast.error("Failed to switch network.");
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
+  const switchEVMChain = async (network: NetworkOption) => {
+    if (network.name === "Solana") return;
+    if (isPrivySession) {
+      await switchPrivyEVMChain(network);
+      return;
+    }
+    if (!switchChain.mutateAsync) {
+      toast.error("Unable to switch chain. Please try reconnecting your wallet.");
+      return;
+    }
+    if (!connector) {
+      toast.error("No wallet connected. Please connect an EVM wallet first.");
+      return;
+    }
+    try {
+      setIsSwitching(true);
+      await switchChain.mutateAsync({ chainId: network.chainId });
+      dispatch(setChainId(network.chainId));
+      localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+      setIsOpen(false);
+    } catch (error) {
+      const err = error as { code?: number };
+      if (err?.code === 4902) {
+        try {
+          const provider: any = await connector.getProvider();
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: network.chainHex,
+                chainName: network.chainName,
+                rpcUrls: network.rpcUrls,
+                blockExplorerUrls: network.blockExplorerUrls,
+                nativeCurrency: network.nativeCurrency,
+              },
+            ],
+          });
+          await switchChain.mutateAsync({ chainId: network.chainId });
+          dispatch(setChainId(network.chainId));
+          localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+          setIsOpen(false);
+        } catch (addErr) {
+          console.error("Add network error:", addErr);
+          toast.error("Failed to add or switch network.");
+        }
+      } else {
+        console.error("Network switch error:", error);
+        toast.error("Failed to switch network.");
+      }
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
+  const handleSwitchToSolana = async () => {
+    if (!solanaConnected || !solanaPublicKey) {
+      toast.error(
+        "Please connect a Solana wallet (Phantom or MetaMask Solana) from the wallet modal first.",
+      );
+      return;
+    }
+    setSwitching(true);
+    try {
+      const currentAccount = getAccount(wagmiClient);
+      if (currentAccount?.connector) {
+        await disconnect(wagmiClient, { connector: currentAccount.connector });
+      }
+      const address = solanaPublicKey.toBase58();
+      dispatch(setWalletType("solana"));
+      dispatch(setAddress(address));
+      dispatch(setChainId(SOLANA_CHAIN_ID));
+      dispatch(setIsConnected(true));
+      setIsOpen(false);
+    } catch (err) {
+      console.error("Switch to Solana:", err);
+      toast.error("Failed to switch to Solana. Please try again.");
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const handleSwitchNetworkEVM = async (network: NetworkOption) => {
+    if (network.name === "Solana") {
+      if (isPrivySession) {
+        toast.error(
+          "Your session uses Privy’s embedded EVM wallet. Use Ethereum, BNB Chain, or Base.",
+        );
+        setIsOpen(false);
+        return;
+      }
+      toast.error(
+        "Solana requires a Solana-capable wallet (e.g. Phantom). Please connect with a Solana wallet.",
+      );
+      setIsOpen(false);
+      return;
+    }
+    await switchEVMChain(network);
+  };
+
+  const manageSwitchNetwork = (network: NetworkOption) => {
+    if (walletType === "solana") {
+      handleSwitchNetwork(network);
+    } else if (network.name === "Solana") {
+      handleSwitchToSolana();
+    } else {
+      handleSwitchNetworkEVM(network);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="bg-black rounded-full px-2 py-1 flex items-center gap-2 sm:gap-3 hover:bg-gray-800 transition-colors"
+      >
+        <img src={selectedNetwork.icon} alt="" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full" />
+        {/* <span className="font-medium text-sm hidden md:block">{selectedNetwork?.name}</span> */}
+        <ChevronDown
+          size={16}
+          className={`text-white transition-transform ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {isOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setIsOpen(false)}
+          ></div>
+          <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl p-2 min-w-[210px] z-20 animate-fade-in">
+            <OutsideClickHandler onOutsideClick={() => setIsOpen(false)}>
+              {networks.map((network) => (
+                <button
+                  key={network.name}
+                  onClick={() => manageSwitchNetwork(network)}
+                  disabled={switching}
+                  className={`w-full flex hover:bg-black/5 hover:shadow-sm items-center gap-3 px-4 py-3 rounded-xl text-sm transition-colors disabled:opacity-60 disabled:pointer-events-none ${selectedNetwork?.name === network.name
+                    ? "bg-black text-white font-medium hover:bg-gray-800"
+                    : "hover:bg-black/5"
+                    }`}
+                >
+                  <img src={network.icon} alt="" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full" />
+                  <span>{network.name}</span>
+                </button>
+              ))}
+              <div className="border-t border-gray-200/50 w-full my-3" />
+              <button
+                className="w-full text-[#F54900] px-4 py-2 flex items-center gap-2 rounded-xl hover:bg-orange-100"
+                onClick={onDisconnectClick}
+              >
+                Disconnect
+              </button>
+              {isSwitching && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Waiting for you to confirm network switch in your wallet…</span>
+                </div>
+              )}
+            </OutsideClickHandler>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

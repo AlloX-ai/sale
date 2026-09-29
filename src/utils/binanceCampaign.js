@@ -1,0 +1,885 @@
+/**
+ * Binance Campaign — simplified quick portfolio flow (BNB Chain only).
+ *
+ * POST /campaigns/binance/portfolio/generate
+ *   Body: { totalInvestment: number, sourceToken?: "USDT"|"USDC"|"BNB" }
+ *   Response: { chain, sourceToken, totalInvestment, perTokenAllocationUsd, picked[], quote }
+ *   `quote` is a full /execution/quote response — passed through to on-chain execution.
+ */
+
+export const BINANCE_CAMPAIGN_CHAIN = "BSC";
+
+export const BINANCE_CAMPAIGN_SOURCE = "binance_campaign";
+
+export const BINANCE_CAMPAIGN_GENERATE_PATH =
+  "/campaigns/binance/portfolio/generate";
+
+export const BINANCE_CAMPAIGN_ENDPOINT = "/campaigns/binance";
+
+export const VOLUME_LEAGUE_CAMPAIGN_GENERATE_PATH =
+  "/campaigns/volume-league/portfolio/generate";
+
+export const BINANCE_CAMPAIGN_SOURCE_TOKENS = ["USDT", "USDC", "BNB"];
+
+/** Reward tiers — min portfolio volume (USD) per Binance campaign lucky draw */
+export const BINANCE_CAMPAIGN_AMOUNT_TIERS = [
+  { amountUsd: 20, tier: 1 },
+  { amountUsd: 100, tier: 2 },
+  { amountUsd: 500, tier: 3 },
+  { amountUsd: 1000, tier: 4 },
+  { amountUsd: 5000, tier: 5 },
+];
+
+export const EARNPOINTS_CAMPAIGN_AMOUNT_TIERS = [
+   
+  { amountUsd: 100, tier: 1 },
+  { amountUsd: 500, tier: 2 },
+  { amountUsd: 1000, tier: 3 },
+  { amountUsd: 5000, tier: 4 },
+  { amountUsd: 10000, tier: 5 },
+
+];
+
+export const BINANCE_CAMPAIGN_MIN_AMOUNT_USD = 5;
+
+/** Default execution slippage tolerance (%) applied to campaign swaps. */
+export const BINANCE_CAMPAIGN_DEFAULT_SLIPPAGE = 0.5;
+
+/** Destination tokens eligible for the Binance Wallet campaign. */
+export const BINANCE_CAMPAIGN_ELIGIBLE_TOKEN_SYMBOLS = [
+  "BNB",
+  "CAKE",
+  "BTCB",
+  "ETH",
+  "LINK",
+  "UNI",
+  "ASTER",
+];
+
+export const BINANCE_CAMPAIGN_ELIGIBLE_TOKENS_LABEL =
+  BINANCE_CAMPAIGN_ELIGIBLE_TOKEN_SYMBOLS.join(", ");
+
+export const BINANCE_CAMPAIGN_UNSUPPORTED_TOKEN_MESSAGE =
+  "Some tokens are not eligible for Binance Wallet Campaign rewards. You can still execute swaps.";
+
+export function isConfirmExecutionChatMessage(message) {
+  const normalized = String(message || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized === "confirm" ||
+    normalized === "confirm and execute" ||
+    normalized === "confirm & execute" ||
+    normalized.includes("confirm and execute") ||
+    normalized.includes("confirm & execute")
+  );
+}
+
+export function extractExecutionFromChatData(data) {
+  if (!data || typeof data !== "object") return null;
+  if (data.execution && typeof data.execution === "object") {
+    return data.execution;
+  }
+  return null;
+}
+
+export function findExecutionInChatMessages(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const msg = messages[index];
+    if (msg?.type !== "ai") continue;
+    const execution = extractExecutionFromChatData(msg.data);
+    if (execution) return execution;
+  }
+  return null;
+}
+
+/** Tokens eligible for Prime Picks / Binance campaign portfolios */
+export const PRIME_PICKS_INCLUDED_TOKENS = [
+  {
+    symbol: "BNB",
+    iconColor: "bg-yellow-400",
+    logo: "https://cdn.allox.ai/allox/tokens/bnbToken.png",
+  },
+  {
+    symbol: "CAKE",
+    iconColor: "bg-teal-400",
+    logo: "https://cdn.allox.ai/allox/tokens/cakeToken.png",
+  },
+  {
+    symbol: "BTCB",
+    iconColor: "bg-orange-400",
+    logo: "https://cdn.allox.ai/allox/tokens/bitcoinToken.svg",
+  },
+  {
+    symbol: "ETH",
+    iconColor: "bg-blue-500",
+    logo: "https://cdn.allox.ai/allox/tokens/ethToken.png",
+  },
+  {
+    symbol: "LINK",
+    iconColor: "bg-blue-700",
+    logo: "https://cdn.allox.ai/allox/tokens/linkToken.png",
+  },
+  {
+    symbol: "UNI",
+    iconColor: "bg-pink-400",
+    logo: "https://cdn.allox.ai/allox/tokens/uniToken.png",
+  },
+  {
+    symbol: "ASTER",
+    iconColor: "bg-purple-500",
+    logo: "https://cdn.allox.ai/allox/tokens/asterToken.png",
+  },
+];
+
+export const BINANCE_DISPLAY_POOL_TOKENS = [
+  {
+    symbol: "AERO",
+    iconColor: "bg-sky-400",
+    logo: "https://cdn.allox.ai/allox/tokens/aero.svg",
+  },
+  {
+    symbol: "SHIB",
+    iconColor: "bg-orange-400",
+    logo: "https://cdn.allox.ai/allox/tokens/shib.svg",
+  },
+  {
+    symbol: "USDT",
+    iconColor: "bg-emerald-400",
+    logo: "https://cdn.allox.ai/allox/tokens/usdt.svg",
+  },
+];
+
+export const PRIME_PICKS_PORTFOLIO_SIZE = 3;
+
+/** Volume League wizard — eligible destination token pool (14 tokens). */
+export const VOLUME_LEAGUE_INCLUDED_TOKENS = [
+  {
+    symbol: "BTCB",
+    iconColor: "bg-orange-400",
+    logo: "https://cdn.allox.ai/allox/tokens/bitcoinToken.svg",
+  },
+  {
+    symbol: "ETH",
+    iconColor: "bg-blue-500",
+    logo: "https://cdn.allox.ai/allox/tokens/ethToken.png",
+  },
+  {
+    symbol: "DOGE",
+    iconColor: "bg-yellow-500",
+    logo: "https://cdn.allox.ai/allox/tokens/doge.svg",
+  },
+  {
+    symbol: "XRP",
+    iconColor: "bg-gray-700",
+    logo: "https://cdn.allox.ai/allox/tokens/xrpToken.png",
+  },
+  {
+    symbol: "ADA",
+    iconColor: "bg-blue-600",
+    logo: "https://cdn.allox.ai/allox/tokens/adaToken.png",
+  },
+  {
+    symbol: "BNB",
+    iconColor: "bg-yellow-400",
+    logo: "https://cdn.allox.ai/allox/tokens/bnbToken.png",
+  },
+  {
+    symbol: "UNI",
+    iconColor: "bg-pink-400",
+    logo: "https://cdn.allox.ai/allox/tokens/uniToken.png",
+  },
+  {
+    symbol: "CAKE",
+    iconColor: "bg-teal-400",
+    logo: "https://cdn.allox.ai/allox/tokens/cakeToken.png",
+  },
+  {
+    symbol: "LINK",
+    iconColor: "bg-blue-700",
+    logo: "https://cdn.allox.ai/allox/tokens/linkToken.png",
+  },
+  {
+    symbol: "ASTER",
+    iconColor: "bg-purple-500",
+    logo: "https://cdn.allox.ai/allox/tokens/asterToken.png",
+  },
+  {
+    symbol: "WOD",
+    iconColor: "bg-purple-400",
+    logo: "https://cdn.allox.ai/allox/tokens/wod.png",
+  },
+  // {
+  //   symbol: "PENGU",
+  //   iconColor: "bg-sky-400",
+  //   logo: "https://cdn.allox.ai/allox/tokens/pengu.png",
+  // },
+  // {
+  //   symbol: "TRX",
+  //   iconColor: "bg-red-500",
+  //   logo: "https://cdn.allox.ai/allox/tokens/trx.png",
+  // },
+  {
+    symbol: "FIL",
+    iconColor: "bg-blue-400",
+    logo: "https://cdn.allox.ai/allox/tokens/fil.png",
+  },
+];
+
+export const BINANCE_RISK_OPTIONS = [
+  {
+    value: "CONSERVATIVE",
+    title: "High Cap",
+    subtitle: "Lower risk",
+    base: "bg-green-50 border-green-200 text-green-800 hover:border-green-300",
+    selected: "bg-green-100 border-green-400 ring-2 ring-green-300/60",
+  },
+  {
+    value: "BALANCED",
+    title: "Mid Cap",
+    subtitle: "Medium risk",
+    base: "bg-blue-50 border-blue-200 text-blue-800 hover:border-blue-300",
+    selected: "bg-blue-100 border-blue-400 ring-2 ring-blue-300/60",
+  },
+  {
+    value: "AGGRESSIVE",
+    title: "Low Cap",
+    subtitle: "Higher risk",
+    base: "bg-orange-50 border-orange-200 text-orange-800 hover:border-orange-300",
+    selected: "bg-orange-100 border-orange-400 ring-2 ring-orange-300/60",
+  },
+];
+
+export function buildBinanceGeneratePayload({
+  amountUsd,
+  sourceToken = "USDT",
+}) {
+  return {
+    totalInvestment: Number(amountUsd),
+    sourceToken,
+  };
+}
+
+export function formatBinancePercent(value) {
+  if (value == null || value === "") return "—";
+  const num = Number(value);
+  if (Number.isFinite(num)) return `${num}%`;
+  const str = String(value).trim();
+  return str.endsWith("%") ? str : `${str}%`;
+}
+
+export function formatBinanceReceiveAmount(value) {
+  if (value == null || value === "") return "—";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  if (num === 0) return "0";
+  if (num >= 1) {
+    return `~${num.toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
+  }
+  return `~${num.toLocaleString(undefined, { maximumSignificantDigits: 4 })}`;
+}
+
+export function parseBinanceGenerateResponse(response) {
+  const data = response?.data ?? response ?? {};
+  const picked = Array.isArray(data.picked) ? data.picked : [];
+  const quote = data.quote ?? null;
+  const perTokenAllocationUsd = data.perTokenAllocationUsd ?? null;
+  const quotePositions = Array.isArray(quote?.positions) ? quote.positions : [];
+  const quoteBySymbol = quotePositions.reduce((acc, pos) => {
+    const sym = String(pos?.symbol || "").toUpperCase();
+    if (sym) acc[sym] = pos;
+    return acc;
+  }, {});
+  const failedTokens = Array.isArray(quote?.failedTokens)
+    ? quote.failedTokens
+    : [];
+  const failedBySymbol = failedTokens.reduce((acc, failed) => {
+    const sym = String(failed?.symbol || "").toUpperCase();
+    if (sym) acc[sym] = failed;
+    return acc;
+  }, {});
+
+  const basket = picked
+    .map((p, idx) => {
+      const symbol = String(p?.symbol || "").toUpperCase();
+      if (!symbol) return null;
+      const quotePos = quoteBySymbol[symbol];
+      const swapQuote = quotePos?.quote ?? {};
+      const failedPos = failedBySymbol[symbol];
+      const failed = Boolean(failedPos) && !quotePos;
+      return {
+        id: p?.contractAddress || `${symbol}-${idx}`,
+        symbol,
+        name: p?.name || null,
+        logo: p?.logo || null,
+        contractAddress: p?.contractAddress || null,
+        marketCap: p?.marketCap ?? null,
+        allocationUsd: quotePos?.allocationUsd ?? perTokenAllocationUsd ?? null,
+        toTokenAmount: swapQuote.toTokenAmount ?? null,
+        amountOutMin: swapQuote.amountOutMin ?? null,
+        priceImpact: swapQuote.priceImpact ?? null,
+        route: swapQuote.route ?? null,
+        fee: swapQuote.fee ?? null,
+        executionOrderId: quotePos?.executionOrderId ?? null,
+        failed,
+        quoteError: failed
+          ? failedPos?.reason || "No route available"
+          : (quotePos?.error ?? null),
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    basket,
+    quote,
+    meta: {
+      chain: data.chain || BINANCE_CAMPAIGN_CHAIN,
+      sourceToken: data.sourceToken || "USDT",
+      totalInvestment: data.totalInvestment ?? null,
+      perTokenAllocationUsd,
+      campaignSource: data.campaignSource ?? null,
+    },
+  };
+}
+
+export function buildBinanceExecutionFromGenerate({ meta, basket, quote }) {
+  if (!meta || !quote) return null;
+  return {
+    chain: meta.chain,
+    sourceToken: meta.sourceToken,
+    positions: basket.map((p) => ({
+      symbol: p.symbol,
+      contractAddress: p.contractAddress,
+      allocationUsd: p.allocationUsd ?? meta.perTokenAllocationUsd,
+    })),
+    portfolioData: {
+      chain: meta.chain,
+      sourceToken: meta.sourceToken,
+      totalInvestment: meta.totalInvestment,
+      source: BINANCE_CAMPAIGN_SOURCE,
+      campaignSource: meta.campaignSource ?? null,
+    },
+    quote,
+  };
+}
+
+/** Binance Wallet campaign — daily check-in qualification (any 14 days in 30-day window). */
+export const BINANCE_CAMPAIGN_REQUIRED_CHECKINS = 14;
+export const BINANCE_CAMPAIGN_PERIOD_DAYS = 30;
+
+export const BINANCE_CAMPAIGN_CHECKIN_NOTICE =
+  "For the Binance Wallet campaign, complete 14 daily check-ins within the 30-day campaign period to qualify for rewards.";
+
+export const BINANCE_CAMPAIGN_CHECKIN_NOTICE_DETAIL =
+  "The 14 check-ins do not need to be consecutive.";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function toUtcDateKey(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return value.trim();
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function addUtcDays(dateKey, days) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function resolveCampaignWindow({
+  campaignStartAt,
+  campaignEndAt,
+  periodDays = BINANCE_CAMPAIGN_PERIOD_DAYS,
+} = {}) {
+  const endKey =
+    toUtcDateKey(campaignEndAt) ?? toUtcDateKey(new Date().toISOString());
+  const startKey =
+    toUtcDateKey(campaignStartAt) ??
+    (endKey ? addUtcDays(endKey, -(periodDays - 1)) : null);
+  if (!startKey || !endKey) {
+    return { startKey: null, endKey: null };
+  }
+  return { startKey, endKey };
+}
+
+function normalizeCheckinHistoryEntries(history) {
+  const items = Array.isArray(history)
+    ? history
+    : (history?.checkIns ??
+      history?.history ??
+      history?.items ??
+      history?.entries ??
+      []);
+  if (!Array.isArray(items)) return [];
+  return items;
+}
+
+/**
+ * Count unique daily check-ins within the campaign window.
+ * Days do not need to be consecutive.
+ */
+export function countCampaignCheckinsInWindow(
+  history,
+  {
+    campaignStartAt,
+    campaignEndAt,
+    periodDays = BINANCE_CAMPAIGN_PERIOD_DAYS,
+  } = {},
+) {
+  const { startKey, endKey } = resolveCampaignWindow({
+    campaignStartAt,
+    campaignEndAt,
+    periodDays,
+  });
+  if (!startKey || !endKey) return 0;
+
+  const uniqueDays = new Set();
+  for (const item of normalizeCheckinHistoryEntries(history)) {
+    const dayKey =
+      toUtcDateKey(item?.date) ??
+      toUtcDateKey(item?.checkInDate) ??
+      toUtcDateKey(item?.checkedInAt) ??
+      toUtcDateKey(item?.timestamp) ??
+      toUtcDateKey(item?.createdAt);
+    if (!dayKey) continue;
+    if (dayKey >= startKey && dayKey <= endKey) {
+      uniqueDays.add(dayKey);
+    }
+  }
+  return uniqueDays.size;
+}
+
+export function isBinanceCampaignCheckinQualified(
+  completed,
+  required = BINANCE_CAMPAIGN_REQUIRED_CHECKINS,
+) {
+  return Number(completed) >= Number(required);
+}
+
+/**
+ * Normalize Binance campaign check-in progress from
+ * `GET /campaigns/binance/?address=<wallet>` → `user.progress.checkInDaysInWindow`.
+ */
+export function parseBinanceCampaignUserProgress(campaignData) {
+  const progress =
+    campaignData?.user?.progress ?? campaignData?.progress ?? null;
+  const checkInDaysInWindow = Number(progress?.checkInDaysInWindow);
+  const completed = Number.isFinite(checkInDaysInWindow)
+    ? checkInDaysInWindow
+    : null;
+
+  const qualified =
+    progress?.qualified === true ||
+    progress?.isQualified === true ||
+    (completed != null &&
+      isBinanceCampaignCheckinQualified(
+        completed,
+        BINANCE_CAMPAIGN_REQUIRED_CHECKINS,
+      ));
+
+  return {
+    completed,
+    requiredCheckIns: BINANCE_CAMPAIGN_REQUIRED_CHECKINS,
+    periodDays: BINANCE_CAMPAIGN_PERIOD_DAYS,
+    qualified: qualified === true,
+    checkInsRemaining:
+      completed != null
+        ? Math.max(0, BINANCE_CAMPAIGN_REQUIRED_CHECKINS - completed)
+        : null,
+  };
+}
+
+export function getBinanceCampaignUserProgressUrl(address) {
+  const encoded = encodeURIComponent(String(address || "").trim());
+  return `${BINANCE_CAMPAIGN_ENDPOINT}/?address=${encoded}`;
+}
+
+/**
+ * Normalize Binance campaign check-in progress from `/checkin/status` (or history fallback).
+ * @deprecated Prefer `parseBinanceCampaignUserProgress` with the campaign endpoint.
+ */
+export function parseBinanceCampaignCheckinProgress({
+  checkinStatus,
+  checkinHistory,
+} = {}) {
+  const campaign =
+    checkinStatus?.binanceCampaign ??
+    checkinStatus?.binanceWalletCampaign ??
+    checkinStatus?.campaign ??
+    null;
+
+  const requiredCheckIns = Number(
+    campaign?.requiredCheckIns ??
+      campaign?.requiredDays ??
+      checkinStatus?.binanceCampaignRequiredCheckIns ??
+      BINANCE_CAMPAIGN_REQUIRED_CHECKINS,
+  );
+
+  const periodDays = Number(
+    campaign?.periodDays ??
+      campaign?.campaignPeriodDays ??
+      checkinStatus?.binanceCampaignPeriodDays ??
+      BINANCE_CAMPAIGN_PERIOD_DAYS,
+  );
+
+  const campaignStartAt =
+    campaign?.campaignStartAt ??
+    campaign?.startAt ??
+    campaign?.startsAt ??
+    checkinStatus?.binanceCampaignStartAt ??
+    null;
+
+  const campaignEndAt =
+    campaign?.campaignEndAt ??
+    campaign?.endAt ??
+    campaign?.endsAt ??
+    checkinStatus?.binanceCampaignEndAt ??
+    null;
+
+  const completedFromApi = Number(
+    campaign?.checkInsCompleted ??
+      campaign?.completedCheckIns ??
+      campaign?.checkInsInPeriod ??
+      campaign?.totalCheckIns ??
+      checkinStatus?.binanceCampaignCheckInsCompleted,
+  );
+
+  const completed = Number.isFinite(completedFromApi)
+    ? completedFromApi
+    : countCampaignCheckinsInWindow(checkinHistory, {
+        campaignStartAt,
+        campaignEndAt,
+        periodDays,
+      });
+
+  const qualified =
+    campaign?.qualified === true ||
+    campaign?.isQualified === true ||
+    isBinanceCampaignCheckinQualified(completed, requiredCheckIns);
+
+  const { startKey, endKey } = resolveCampaignWindow({
+    campaignStartAt,
+    campaignEndAt,
+    periodDays,
+  });
+
+  let daysRemainingInPeriod = null;
+  if (endKey) {
+    const todayKey = toUtcDateKey(new Date().toISOString());
+    const endMs = new Date(`${endKey}T00:00:00.000Z`).getTime();
+    const todayMs = new Date(`${todayKey}T00:00:00.000Z`).getTime();
+    daysRemainingInPeriod = Math.max(
+      0,
+      Math.floor((endMs - todayMs) / MS_PER_DAY) + 1,
+    );
+  }
+
+  return {
+    completed,
+    requiredCheckIns,
+    periodDays,
+    qualified,
+    campaignStartAt: startKey,
+    campaignEndAt: endKey,
+    daysRemainingInPeriod,
+    checkInsRemaining: Math.max(0, requiredCheckIns - completed),
+  };
+}
+
+export const BINANCE_BOOSTER_ADDR_STORAGE_KEY = "binance_booster_addr";
+export const BINANCE_BOOSTER_ADDR_PARAM = "binanceBoosterVerAddr";
+export const BINANCE_WALLET_ADDRESS_HELP_URL =
+  "https://www.binance.com/en/support/faq/detail/ebfa9f504ec548968bf0c1ed591a3eaa";
+
+export function getBinanceBoosterAddrFromLocation(search = "", hash = "") {
+  const searchParams = new URLSearchParams(search || "");
+  const fromSearch = searchParams.get(BINANCE_BOOSTER_ADDR_PARAM)?.trim();
+  if (fromSearch) return fromSearch.toLowerCase();
+
+  const normalizedHash = String(hash || "").replace(/^#/, "");
+  const hashQueryIndex = normalizedHash.indexOf("?");
+  if (hashQueryIndex >= 0) {
+    const hashQuery = normalizedHash.slice(hashQueryIndex + 1);
+    const hashParams = new URLSearchParams(hashQuery);
+    const fromHash = hashParams.get(BINANCE_BOOSTER_ADDR_PARAM)?.trim();
+    if (fromHash) return fromHash.toLowerCase();
+  }
+
+  return null;
+}
+
+/** Persist campaign keyless wallet from URL (search or hash query). */
+export function persistBinanceBoosterAddrFromLocation(search, hash) {
+  const raw = getBinanceBoosterAddrFromLocation(search, hash);
+  if (!raw) return;
+  try {
+    localStorage.setItem(BINANCE_BOOSTER_ADDR_STORAGE_KEY, raw);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getStoredBinanceBoosterAddr() {
+  try {
+    return localStorage.getItem(BINANCE_BOOSTER_ADDR_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function isCampaignBinanceEndpoint(endpoint) {
+  return (
+    typeof endpoint === "string" &&
+    /^\/campaigns\/binance(?:\/|$)/.test(endpoint)
+  );
+}
+
+/** Structured error from any `/campaigns/binance/*` error response. */
+export function parseCampaignBinanceError(errOrData) {
+  if (!errOrData) return null;
+
+  const preset = errOrData?.campaignError;
+  if (preset && typeof preset === "object") {
+    return preset;
+  }
+
+  const data = errOrData?.data ?? errOrData;
+  const error = data?.error;
+  if (!error || typeof error !== "object" || (!error.message && !error.code)) {
+    return null;
+  }
+
+  const retryAfterSeconds = Number(error.retryAfterSeconds);
+  return {
+    code: error.code ?? null,
+    message: error.message ?? "Something went wrong. Please try again.",
+    eta: error.eta ?? null,
+    retryAfterSeconds: Number.isFinite(retryAfterSeconds)
+      ? retryAfterSeconds
+      : null,
+    requestId: error.requestId ?? null,
+    timestamp: error.timestamp ?? null,
+  };
+}
+
+const CAMPAIGN_BINANCE_RETRY_MAX_ATTEMPTS = 20;
+
+/**
+ * Call a `/campaigns/binance/*` endpoint; show structured errors via `onCampaignError`
+ * and auto-retry when `error.retryAfterSeconds` is present.
+ */
+export async function campaignBinanceApiCall(
+  apiCallFn,
+  endpoint,
+  options = {},
+  { onCampaignError } = {},
+) {
+  for (
+    let attempt = 0;
+    attempt < CAMPAIGN_BINANCE_RETRY_MAX_ATTEMPTS;
+    attempt++
+  ) {
+    try {
+      const result = await apiCallFn(endpoint, options);
+      onCampaignError?.(null, { isRetrying: false });
+      return result;
+    } catch (err) {
+      const campaignError = parseCampaignBinanceError(err);
+      if (!campaignError) throw err;
+
+      const retrySec = campaignError.retryAfterSeconds;
+      const canRetry =
+        retrySec != null &&
+        retrySec > 0 &&
+        attempt < CAMPAIGN_BINANCE_RETRY_MAX_ATTEMPTS - 1;
+
+      onCampaignError?.(campaignError, {
+        isRetrying: canRetry,
+        retryInSeconds: canRetry ? retrySec : null,
+      });
+
+      if (!canRetry) {
+        throw {
+          ...err,
+          campaignError,
+          message: campaignError.message,
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, retrySec * 1000));
+    }
+  }
+
+  throw new Error("Campaign request failed after multiple retries.");
+}
+
+export function normalizeBinanceCampaignTokenSymbol(symbol) {
+  return String(symbol || "")
+    .trim()
+    .toUpperCase();
+}
+
+const hasBstocksTag = (tags) =>
+  Array.isArray(tags) &&
+  tags.some((tag) => String(tag || "").trim().toLowerCase() === "bstocks");
+
+/** Chat stock builds say e.g. "Here's your stocks portfolio preview". */
+export function isBinanceCampaignStocksPortfolioCopy(text) {
+  return /stocks?\s+portfolio/i.test(String(text || ""));
+}
+
+const resolveStockLookup = (stockLookup) => {
+  if (stockLookup instanceof Set) {
+    return { symbols: stockLookup, addresses: null };
+  }
+  if (stockLookup && typeof stockLookup === "object") {
+    return {
+      symbols:
+        stockLookup.symbols instanceof Set ? stockLookup.symbols : null,
+      addresses:
+        stockLookup.addresses instanceof Set ? stockLookup.addresses : null,
+    };
+  }
+  return { symbols: null, addresses: null };
+};
+
+/**
+ * Tokenized stock positions (bstocks / PCS aggregator) are outside the
+ * Binance Wallet Campaign eligibility set — don't surface campaign warnings
+ * for stock-only builds.
+ */
+export function isBinanceCampaignStockPosition(
+  position,
+  stockLookup = null,
+) {
+  if (!position || typeof position !== "object") return false;
+  if (hasBstocksTag(position.tags)) return true;
+  if (String(position.source || "").trim().toLowerCase() === "bstocks") {
+    return true;
+  }
+  // Saved portfolios label tokenized equities e.g. "Microsoft Tokenized bStocks".
+  if (/bstocks/i.test(String(position.name || ""))) {
+    return true;
+  }
+  const provider = String(
+    position.swapProvider || position.provider || position.routeProvider || "",
+  )
+    .trim()
+    .toUpperCase();
+  if (provider.includes("PCS_AGGREGATOR") || provider === "PCS") return true;
+  const narrative = String(
+    position.narrative || position.category || position.narrativeName || "",
+  ).toLowerCase();
+  if (/\bstocks?\b/.test(narrative)) return true;
+
+  const { symbols, addresses } = resolveStockLookup(stockLookup);
+  const symbol = normalizeBinanceCampaignTokenSymbol(
+    position.symbol || position.name,
+  );
+  if (symbol && symbols instanceof Set && symbols.has(symbol)) {
+    return true;
+  }
+  const address = String(
+    position.contractAddress || position.address || "",
+  )
+    .trim()
+    .toLowerCase();
+  if (address && addresses instanceof Set && addresses.has(address)) {
+    return true;
+  }
+  return false;
+}
+
+export function isBinanceCampaignStockPortfolio(
+  positions,
+  meta = null,
+  stockLookup = null,
+) {
+  if (meta && typeof meta === "object") {
+    if (hasBstocksTag(meta.tags)) return true;
+    if (String(meta.source || "").trim().toLowerCase() === "bstocks") {
+      return true;
+    }
+    if (/\bstocks?\b/.test(String(meta.portfolioType || meta.narrative || ""))) {
+      return true;
+    }
+    // Guided chat + saved portfolios: "Stocks Portfolio" / preview copy.
+    if (
+      isBinanceCampaignStocksPortfolioCopy(
+        meta.message ||
+          meta.content ||
+          meta.assistantMessage ||
+          meta.name ||
+          meta.title,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  const list = Array.isArray(positions) ? positions.filter(Boolean) : [];
+  if (!list.length) return false;
+  return list.every((position) =>
+    isBinanceCampaignStockPosition(position, stockLookup),
+  );
+}
+
+export function isBinanceCampaignEligibleToken(symbol) {
+  const normalized = normalizeBinanceCampaignTokenSymbol(symbol);
+  if (!normalized) return false;
+  return BINANCE_CAMPAIGN_ELIGIBLE_TOKEN_SYMBOLS.includes(normalized);
+}
+
+export function getIneligibleBinanceCampaignTokens(symbols) {
+  const ineligible = [];
+  const seen = new Set();
+
+  for (const symbol of symbols || []) {
+    const normalized = normalizeBinanceCampaignTokenSymbol(symbol);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    if (!isBinanceCampaignEligibleToken(normalized)) {
+      ineligible.push(normalized);
+    }
+  }
+
+  return ineligible;
+}
+
+export function extractSymbolsFromPositions(positions) {
+  if (!Array.isArray(positions)) return [];
+  return positions
+    .map((position) => position?.symbol || position?.name)
+    .filter(Boolean);
+}
+
+export function getIneligibleBinanceCampaignTokensFromPositions(
+  positions,
+  stockLookup = null,
+) {
+  const nonStockPositions = (Array.isArray(positions) ? positions : []).filter(
+    (position) => !isBinanceCampaignStockPosition(position, stockLookup),
+  );
+  return getIneligibleBinanceCampaignTokens(
+    extractSymbolsFromPositions(nonStockPositions),
+  );
+}
+
+export function getBinanceMissingSelections(form) {
+  const missing = [];
+  const amount = form?.amountUsd != null ? Number(form.amountUsd) : null;
+  if (amount == null || Number.isNaN(amount)) {
+    missing.push("investment amount");
+  } else if (amount < BINANCE_CAMPAIGN_MIN_AMOUNT_USD) {
+    missing.push(`investment of at least $${BINANCE_CAMPAIGN_MIN_AMOUNT_USD}`);
+  }
+  return missing;
+}

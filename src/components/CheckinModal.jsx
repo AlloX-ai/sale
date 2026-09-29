@@ -1,0 +1,1057 @@
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+const CONFETTI_POSITIONS = [...Array(8)].map(() => ({
+  left: Math.random() * 100,
+  x: (Math.random() - 0.5) * 60,
+}));
+import { createPortal } from "react-dom";
+import { useDispatch, useSelector } from "react-redux";
+import { toast } from "../utils/toast";
+import {
+  X,
+  Gift,
+  Check,
+  Lock,
+  Sparkles,
+  Package,
+  ChevronDown,
+  HelpCircle,
+} from "lucide-react";
+
+import { useConnection, useSwitchChain } from "wagmi";
+import { useWallets } from "@privy-io/react-auth";
+import { SOLANA_CHAIN_ID } from "../hooks/useCheckin";
+import { setChainId, setWalletModal } from "../redux/slices/walletSlice";
+import {
+  getPrivyEmbedded,
+  switchPrivyEmbeddedToChain,
+} from "../utils/privyWalletUtils";
+import { useAuth } from "../hooks/useAuth";
+import { useBinanceCampaignUserProgress } from "../hooks/useBinanceCampaignUserProgress";
+import { BINANCE_CAMPAIGN_REQUIRED_CHECKINS } from "../utils/binanceCampaign";
+
+const PREFERRED_CHAIN_STORAGE_KEY = "walletPreferredChainId";
+
+const CHECKIN_CHAINS = [
+  {
+    chainId: 1,
+    chainHex: "0x1",
+    name: "Ethereum",
+    icon: "https://cdn.allox.ai/allox/networks/eth.svg",
+    chainName: "Ethereum Mainnet",
+    rpcUrls: ["https://cloudflare-eth.com"],
+    blockExplorerUrls: ["https://etherscan.io"],
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  },
+  {
+    chainId: 56,
+    chainHex: "0x38",
+    name: "BNB Chain",
+    icon: "https://cdn.allox.ai/allox/networks/bnbIcon.svg",
+    chainName: "BNB Chain",
+    rpcUrls: ["https://bsc-dataseed.binance.org"],
+    blockExplorerUrls: ["https://bscscan.com"],
+    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+  },
+  {
+    chainId: 8453,
+    chainHex: "0x2105",
+    name: "Base",
+    icon: "https://cdn.allox.ai/allox/networks/base.svg",
+    chainName: "Base",
+    rpcUrls: ["https://mainnet.base.org"],
+    blockExplorerUrls: ["https://basescan.org"],
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  },
+  {
+    chainId: SOLANA_CHAIN_ID,
+    chainHex: "0x65",
+    name: "Solana",
+    icon: "https://cdn.allox.ai/allox/networks/solana.svg",
+    chainName: "Solana Mainnet",
+    rpcUrls: ["https://api.mainnet-beta.solana.com"],
+    blockExplorerUrls: ["https://explorer.solana.com"],
+    nativeCurrency: { name: "SOL", symbol: "SOL", decimals: 9 },
+  },
+];
+// eslint-disable-next-line no-unused-vars -- motion used as namespace in JSX (motion.div)
+import { motion, AnimatePresence } from "motion/react";
+import { useTotalPoints } from "../hooks/useTotalPoints";
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DEFAULT_REWARDS = [500, 1000, 1500, 2000, 2500, 4000, 5000].map(
+  (points, i) => ({
+    day: i + 1,
+    points,
+    claimed: false,
+    current: i === 0,
+    locked: i > 0,
+  }),
+);
+
+function formatCountdown(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
+
+const RECONCILE_CONFIRMED_MSG =
+  "✓ Your check-in is confirmed on-chain — progress updated.";
+
+const collectErrorText = (err) =>
+  [
+    err?.message,
+    err?.shortMessage,
+    err?.details,
+    err?.cause?.message,
+    err?.data?.message,
+    typeof err?.data?.error === "string" ? err.data.error : null,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const isAlreadyCheckedInError = (err) =>
+  collectErrorText(err).includes("already checked in");
+
+const isCheckinTimeoutError = (err) => {
+  const msg = collectErrorText(err);
+  return msg.includes("timed out") || msg.includes("timeout");
+};
+
+const shouldTryReconcile = (err) =>
+  isAlreadyCheckedInError(err) || isCheckinTimeoutError(err);
+
+function mapStatusToWeekDays(rewards) {
+  const items = rewards ?? DEFAULT_REWARDS;
+  return items.map((r) => {
+    const status = r.claimed ? "claimed" : r.current ? "active" : "locked";
+    return {
+      day: DAY_NAMES[(r.day ?? 0) - 1] ?? `Day ${r.day}`,
+      points: r.points ?? 0,
+      status,
+      dayNumber: r.day ?? 0,
+      isCurrent: r.current === true,
+    };
+  });
+}
+
+export function CheckinModal({
+  open,
+  isOpen,
+  onClose,
+  status,
+  claim,
+  fetchStatus,
+  reconcileCheckin,
+  addOptimisticCheckinPoints,
+  loading,
+}) {
+  const dispatch = useDispatch();
+  const walletType = useSelector((state) => state.wallet.walletType);
+  const chainId = useSelector((state) => state.wallet.chainId);
+  const sessionSource = useSelector((state) => state.wallet.sessionSource);
+  const { wallets } = useWallets();
+  const { isAuthenticated } = useAuth();
+  const isSolana = walletType === "solana";
+  const isPrivySession = sessionSource === "privy" || walletType === "privy";
+  const isOpenState = open ?? isOpen ?? false;
+  const { progress: binanceCampaignProgress } = useBinanceCampaignUserProgress({
+    enabled: isOpenState,
+  });
+  const { connector } = useConnection();
+  const switchChain = useSwitchChain();
+
+  const [justClaimed, setJustClaimed] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [chainDropdownOpen, setChainDropdownOpen] = useState(false);
+  const [selectedChainId, setSelectedChainId] = useState(SOLANA_CHAIN_ID);
+  const [isSwitchingChain, setIsSwitchingChain] = useState(false);
+  const [showBinanceCheckinInfo, setShowBinanceCheckinInfo] = useState(false);
+  const [countdownSeconds, setCountdownSeconds] = useState(null);
+  const reconcileOnOpenRef = useRef(false);
+  const claimReconcileConfirmedRef = useRef(false);
+
+  const handleReconcileResult = useCallback(
+    (result, { showToast = true, markClaimConfirmed = false } = {}) => {
+      const { credited = 0, status: newStatus } = result ?? {};
+      if (!newStatus) return false;
+
+      const alreadyChecked =
+        newStatus.checkedInToday === true || newStatus.canCheckIn === false;
+      const confirmed = credited > 0 || alreadyChecked;
+
+      if (confirmed) {
+        if (markClaimConfirmed) claimReconcileConfirmedRef.current = true;
+        const days = mapStatusToWeekDays(newStatus.rewards);
+        const latestClaimed = [...days]
+          .filter((day) => day.status === "claimed")
+          .sort((a, b) => b.dayNumber - a.dayNumber)[0];
+        if (latestClaimed) setSelectedDay(latestClaimed);
+        if (showToast || credited > 0) {
+          setJustClaimed(true);
+          setTimeout(() => setJustClaimed(false), 2500);
+        }
+      }
+
+      if (showToast && confirmed) {
+        toast.success(RECONCILE_CONFIRMED_MSG);
+      }
+
+      return confirmed;
+    },
+    [],
+  );
+
+  const runReconcile = useCallback(
+    async (options) => {
+      if (!reconcileCheckin) return { credited: 0, status: null };
+      return reconcileCheckin().then((result) => {
+        handleReconcileResult(result, options);
+        return result;
+      });
+    },
+    [reconcileCheckin, handleReconcileResult],
+  );
+
+  useEffect(() => {
+    if (status?.secondsUntilReset == null) {
+      setCountdownSeconds(null);
+      return;
+    }
+    setCountdownSeconds(status.secondsUntilReset);
+    const id = setInterval(() => {
+      setCountdownSeconds((current) =>
+        current != null && current > 0 ? current - 1 : 0,
+      );
+    }, 1000);
+    return () => clearInterval(id);
+  }, [status?.secondsUntilReset]);
+
+  useEffect(() => {
+    if (!isOpenState) {
+      setShowBinanceCheckinInfo(false);
+      reconcileOnOpenRef.current = false;
+    }
+  }, [isOpenState]);
+
+  // Self-heal stale check-in state when the modal opens (cheap explorer lookup).
+  useEffect(() => {
+    if (!isOpenState || !isAuthenticated || !reconcileCheckin) return;
+    if (reconcileOnOpenRef.current) return;
+    reconcileOnOpenRef.current = true;
+    runReconcile({ showToast: false });
+  }, [isOpenState, isAuthenticated, reconcileCheckin, runReconcile]);
+
+  // After a wallet round-trip while claiming, reconcile instead of staying stuck.
+  useEffect(() => {
+    if (!isOpenState || !loading || !reconcileCheckin) return;
+
+    let graceTimer = null;
+    const onResume = () => {
+      if (document.visibilityState && document.visibilityState !== "visible") {
+        return;
+      }
+      clearTimeout(graceTimer);
+      graceTimer = setTimeout(() => {
+        runReconcile({ showToast: true, markClaimConfirmed: true });
+      }, 2000);
+    };
+
+    document.addEventListener("visibilitychange", onResume);
+    window.addEventListener("focus", onResume);
+    return () => {
+      clearTimeout(graceTimer);
+      document.removeEventListener("visibilitychange", onResume);
+      window.removeEventListener("focus", onResume);
+    };
+  }, [isOpenState, loading, reconcileCheckin, runReconcile]);
+
+  // Sync selected chain when modal opens or wallet changes
+  useEffect(() => {
+    if (isOpenState) {
+      setSelectedChainId(
+        isSolana
+          ? SOLANA_CHAIN_ID
+          : isPrivySession
+            ? 56
+            : chainId && chainId !== SOLANA_CHAIN_ID
+              ? chainId
+              : 1,
+      );
+    }
+  }, [isOpenState, isSolana, isPrivySession, chainId]);
+
+  const weekDays = useMemo(
+    () => mapStatusToWeekDays(status?.rewards),
+    [status?.rewards],
+  );
+  const totalPointsCollected = isAuthenticated
+    ? (status?.totalPointsEarned ?? 0)
+    : 0;
+  const { totalPoints: rawTotalPoints } = useTotalPoints();
+  const totalPoints = isAuthenticated ? rawTotalPoints : 0;
+  const giftsCollected = isAuthenticated
+    ? (status?.rewards?.filter((items) => items.claimed === true).length ?? 0)
+    : 0;
+  const binanceClaimDays = binanceCampaignProgress?.completed ?? 0;
+  const hasCheckedInToday =
+    isAuthenticated &&
+    (status?.checkedInToday === true || status?.canCheckIn === false);
+
+  const activeDay = weekDays.find((day) => day.status === "active");
+  const currentDay =
+    weekDays.find((day) => day.isCurrent) ??
+    [...weekDays]
+      .filter((day) => day.status === "claimed")
+      .sort((a, b) => b.dayNumber - a.dayNumber)[0];
+  const displayDay = selectedDay ?? activeDay ?? currentDay;
+
+  const selectedChain =
+    CHECKIN_CHAINS.find((c) => c.chainId === selectedChainId) ??
+    CHECKIN_CHAINS[0];
+
+  const handleChainSelect = async (chain) => {
+    // Solana / EVM wallet-type guards
+    const wantsSolana = chain.chainId === SOLANA_CHAIN_ID;
+    if (wantsSolana && isPrivySession) {
+      toast.error(
+        "Your account uses Privy’s embedded EVM wallet. Choose Ethereum, BNB Chain, or Base.",
+      );
+      setChainDropdownOpen(false);
+      return;
+    }
+    if (wantsSolana && !isSolana) {
+      toast.error(
+        "Solana requires a Solana-capable wallet (e.g. MetaMask with Solana). Connect with a Solana wallet to claim on Solana.",
+      );
+      setChainDropdownOpen(false);
+      return;
+    }
+    if (!wantsSolana && isSolana) {
+      toast.error(
+        "EVM chains require an EVM wallet (e.g. MetaMask). Connect with an EVM wallet to claim on Ethereum, BNB, or Base.",
+      );
+      setChainDropdownOpen(false);
+      return;
+    }
+
+    if (wantsSolana) {
+      try {
+        localStorage.setItem(
+          PREFERRED_CHAIN_STORAGE_KEY,
+          String(SOLANA_CHAIN_ID),
+        );
+        dispatch(setChainId(SOLANA_CHAIN_ID));
+        setSelectedChainId(chain.chainId);
+        setChainDropdownOpen(false);
+      } catch (e) {
+        console.warn("Failed to persist preferred chain", e);
+      }
+      return;
+    }
+
+    // Privy embedded EVM — same UX as NetworkSelector
+    if (isPrivySession) {
+      const embedded = getPrivyEmbedded(wallets);
+      if (!embedded) {
+        toast.error(
+          "Embedded wallet not ready. Refresh the page or sign in again.",
+        );
+        setChainDropdownOpen(false);
+        return;
+      }
+      try {
+        setIsSwitchingChain(true);
+        await switchPrivyEmbeddedToChain(embedded, chain.chainId);
+        dispatch(setChainId(chain.chainId));
+        localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+        setSelectedChainId(chain.chainId);
+        setChainDropdownOpen(false);
+      } catch (error) {
+        console.error("Privy network switch error:", error);
+        toast.error("Failed to switch network.");
+      } finally {
+        setIsSwitchingChain(false);
+      }
+      return;
+    }
+
+    // EVM path – wagmi (MetaMask, etc.)
+    if (!switchChain.mutateAsync) {
+      toast.error(
+        "Unable to switch chain. Please try reconnecting your wallet.",
+      );
+      return;
+    }
+    if (!connector) {
+      toast.error("No wallet connected. Please connect an EVM wallet first.");
+      return;
+    }
+
+    try {
+      setIsSwitchingChain(true);
+      await switchChain.mutateAsync({ chainId: chain.chainId });
+      dispatch(setChainId(chain.chainId));
+      localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+      setSelectedChainId(chain.chainId);
+      setChainDropdownOpen(false);
+    } catch (error) {
+      const errCode = error?.code;
+      if (errCode === 4902) {
+        try {
+          const provider = await connector.getProvider();
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: chain.chainHex,
+                chainName: chain.chainName,
+                rpcUrls: chain.rpcUrls,
+                blockExplorerUrls: chain.blockExplorerUrls,
+                nativeCurrency: chain.nativeCurrency,
+              },
+            ],
+          });
+          await switchChain.mutateAsync({ chainId: chain.chainId });
+          dispatch(setChainId(chain.chainId));
+          localStorage.removeItem(PREFERRED_CHAIN_STORAGE_KEY);
+          setSelectedChainId(chain.chainId);
+          setChainDropdownOpen(false);
+          return;
+        } catch (addErr) {
+          console.error("Network add error:", addErr);
+          toast.error("Failed to add or switch network.");
+          return;
+        }
+      }
+      console.error("Network switch error:", error);
+      toast.error("Failed to switch network.");
+    } finally {
+      setIsSwitchingChain(false);
+    }
+  };
+
+  const handleClaim = async () => {
+    if (!activeDay || justClaimed || loading || status?.canCheckIn !== true)
+      return;
+    claimReconcileConfirmedRef.current = false;
+    try {
+      await claim(selectedChainId);
+      const claimedDay = { ...activeDay, status: "claimed" };
+      setSelectedDay(claimedDay);
+      setJustClaimed(true);
+      addOptimisticCheckinPoints?.(activeDay.points);
+      await fetchStatus();
+      toast.success(
+        `Day ${activeDay.dayNumber} claimed! +${activeDay.points} points.`,
+      );
+      setTimeout(() => setJustClaimed(false), 2500);
+    } catch (err) {
+      if (claimReconcileConfirmedRef.current) {
+        setJustClaimed(false);
+        return;
+      }
+      if (err?.code === "WALLET_SOLANA_REQUIRED") {
+        toast.error(err.message);
+      } else if (err?.code === "WALLET_EVM_REQUIRED") {
+        toast.error(err.message);
+      } else if (shouldTryReconcile(err) && reconcileCheckin) {
+        const result = await reconcileCheckin();
+        const confirmed = handleReconcileResult(result, {
+          showToast: true,
+          markClaimConfirmed: true,
+        });
+        if (
+          !confirmed &&
+          (result.credited ?? 0) === 0 &&
+          result.status?.canCheckIn === true &&
+          result.status?.checkedInToday !== true
+        ) {
+          const msg =
+            err?.message ??
+            err?.data?.message ??
+            (typeof err?.data?.error === "string"
+              ? err.data.error
+              : "Claim failed");
+          toast.error(msg);
+        }
+      } else {
+        const msg =
+          err?.message ??
+          err?.data?.message ??
+          (typeof err?.data?.error === "string"
+            ? err.data.error
+            : "Claim failed");
+        toast.error(msg);
+      }
+      setJustClaimed(false);
+    }
+  };
+
+  const handleDayClick = (day) => {
+    if (day.status === "claimed" || day.status === "active") {
+      setSelectedDay(day);
+    }
+  };
+
+  // Show green "claimed" whenever this day is claimed; avoid flipping to black
+  // when fetchStatus() updates and activeDay moves to the next day (async).
+  const isClaimedView = displayDay?.status === "claimed";
+  const isJustClaimed =
+    justClaimed &&
+    selectedDay?.status === "claimed" &&
+    displayDay?.dayNumber === selectedDay?.dayNumber;
+
+  useEffect(() => {
+    if (!isOpenState) {
+      setChainDropdownOpen(false);
+      return;
+    }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpenState]);
+
+  const modalContent = (
+    <AnimatePresence>
+      {isOpenState && (
+        <>
+          {/* Backdrop - full viewport on mobile including safe areas */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 min-h-[100dvh] bg-black/60 backdrop-blur-md z-[200]"
+          />
+
+          {/* Modal - scrollable on mobile, centered on desktop */}
+          <div className="fixed inset-0 min-h-[100dvh] z-[200] p-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden border border-white/60 pointer-events-auto my-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button - safe area on notched devices */}
+              <button
+                onClick={onClose}
+                className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-50 w-9 h-9 flex items-center justify-center rounded-full bg-white/80 hover:bg-white transition-all shadow-sm touch-manipulation"
+                aria-label="Close"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+
+              {/* Content */}
+              <div className="relative z-10 p-4 sm:p-8">
+                {/* Header */}
+                <div className="text-center mb-4 sm:mb-6">
+                  <h2 className="text-2xl font-bold mb-0.5">Daily Bonus</h2>
+                  <p className="text-sm text-gray-600">
+                    Claim your daily rewards
+                  </p>
+                </div>
+
+                {/* {shouldShowCampaignCheckin && (
+                  <div className="mb-4 sm:mb-6">
+                    <BinanceCampaignCheckinNotice
+                      progress={binanceCampaignCheckinProgress}
+                      compact
+                    />
+                  </div>
+                )} */}
+
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+                  <div className="glass-card p-4 border border-white/60">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Total Points
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {totalPoints.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="glass-card p-4 border border-white/60">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Weekly Points
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {totalPointsCollected.toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="glass-card p-4 border border-white/60">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Gifts Collected
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {giftsCollected} / 7
+                    </div>
+                  </div>
+                  {/* <div className="glass-card p-4 border border-white/60 relative">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Binance Claim
+                    </div>
+                    <div className="text-2xl font-bold">
+                      {binanceClaimDays} / {BINANCE_CAMPAIGN_REQUIRED_CHECKINS}
+                    </div>
+                    <div
+                      className="absolute top-2 right-1"
+                      onClick={() =>
+                        setShowBinanceCheckinInfo(!showBinanceCheckinInfo)
+                      }
+                    >
+                      <button
+                        type="button"
+                        aria-label="Binance check-in requirements"
+                        className="border border-gray-200 bg-white rounded-full px-1 py-1 hover:bg-gray-100 transition-colors flex items-center gap-2 text-xs whitespace-nowrap"
+                      >
+                        <HelpCircle size={14} className="text-blue-600" />
+                        <span className="font-xs">More info</span>
+                      </button>
+                      {showBinanceCheckinInfo && (
+                        <div className="absolute right-0 top-full mt-2 w-80 p-4 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
+                          <div className="space-y-2 text-sm text-gray-700">
+                            <p>
+                              Claim Daily Bonus 14 times during the 30-day
+                              campaign. Sign on-chain message on each of those
+                              days. Check-ins do not need to be consecutive.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div> */}
+                </div>
+
+                {/* Main Content - Big Gift + Week Calendar */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* Left Side - Active/Selected Day Gift */}
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="text-sm font-semibold text-gray-600 mb-3">
+                      {isClaimedView
+                        ? `Day ${displayDay?.dayNumber} Reward`
+                        : "Today's Reward"}
+                    </div>
+
+                    {displayDay && (
+                      <motion.div
+                        key={displayDay.dayNumber}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="relative mb-4"
+                      >
+                        {/* Gift Container */}
+                        <div className="relative">
+                          {isJustClaimed ? (
+                            // Opened Gift with Celebration
+                            <motion.div
+                              initial={{ scale: 1 }}
+                              animate={{
+                                scale: [1, 1.1, 1],
+                                rotate: [0, -5, 5, 0],
+                              }}
+                              transition={{ duration: 0.6 }}
+                              className="w-26 h-26 sm:w-32 sm:h-32 bg-gradient-to-br from-green-400 via-emerald-500 to-green-600 rounded-3xl flex items-center justify-center shadow-2xl relative overflow-hidden"
+                            >
+                              {/* Confetti effect */}
+                              <motion.div
+                                animate={{
+                                  y: [-100, 100],
+                                  opacity: [1, 0],
+                                }}
+                                transition={{ duration: 1, repeat: 2 }}
+                                className="absolute inset-0"
+                              >
+                                {CONFETTI_POSITIONS.map((pos, i) => (
+                                  <motion.div
+                                    key={i}
+                                    className="absolute w-2 h-2 rounded-full"
+                                    style={{
+                                      left: `${pos.left}%`,
+                                      top: "20%",
+                                      backgroundColor: [
+                                        "#fbbf24",
+                                        "#f59e0b",
+                                        "#ec4899",
+                                        "#8b5cf6",
+                                        "#3b82f6",
+                                      ][i % 5],
+                                    }}
+                                    animate={{
+                                      y: [0, 80],
+                                      x: [pos.x],
+                                      opacity: [1, 0],
+                                      rotate: [0, 360],
+                                    }}
+                                    transition={{
+                                      duration: 0.8,
+                                      delay: i * 0.1,
+                                    }}
+                                  />
+                                ))}
+                              </motion.div>
+
+                              {/* Opened box icon */}
+                              <Package
+                                size={64}
+                                className="text-white"
+                                strokeWidth={1.5}
+                              />
+
+                              {/* Success checkmark overlay */}
+                              <motion.div
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                transition={{ delay: 0.3 }}
+                                className="absolute inset-0 flex items-center justify-center"
+                              >
+                                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg">
+                                  <Check
+                                    size={32}
+                                    className="text-green-600"
+                                    strokeWidth={3}
+                                  />
+                                </div>
+                              </motion.div>
+                            </motion.div>
+                          ) : isClaimedView ? (
+                            // Previously Claimed Gift (Opened)
+                            <div className="w-26 h-26 sm:w-32 sm:h-32 bg-gradient-to-br from-green-400 via-emerald-500 to-green-600 rounded-3xl flex items-center justify-center shadow-2xl relative">
+                              <Package
+                                size={64}
+                                className="text-white"
+                                strokeWidth={1.5}
+                              />
+                              <div className="absolute top-2 right-2 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-md">
+                                <Check
+                                  size={16}
+                                  className="text-green-600"
+                                  strokeWidth={3}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            // Active Gift (Closed)
+                            <div className="w-26 h-26 sm:w-32 sm:h-32 bg-black rounded-3xl flex items-center justify-center shadow-2xl transform hover:scale-105 transition-transform">
+                              <Gift
+                                size={52}
+                                className="text-white"
+                                strokeWidth={1.5}
+                              />
+                            </div>
+                          )}
+
+                          {/* Sparkle Effects for Active Gift */}
+                          {!isClaimedView && !isJustClaimed && (
+                            <>
+                              <motion.div
+                                animate={{
+                                  scale: [1, 1.2, 1],
+                                  opacity: [0.5, 1, 0.5],
+                                }}
+                                transition={{ duration: 2, repeat: Infinity }}
+                                className="absolute -top-2 -right-2 w-6 h-6 bg-yellow-400 rounded-full blur-sm"
+                              />
+                              <motion.div
+                                animate={{
+                                  scale: [1, 1.3, 1],
+                                  opacity: [0.4, 1, 0.4],
+                                }}
+                                transition={{
+                                  duration: 2.5,
+                                  repeat: Infinity,
+                                  delay: 0.5,
+                                }}
+                                className="absolute -bottom-2 -left-2 w-5 h-5 bg-pink-400 rounded-full blur-sm"
+                              />
+                            </>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {displayDay && (
+                      <div className="text-center sm:mb-6 mb-2">
+                        <div
+                          className={`text-3xl sm:text-4xl font-bold mb-1 ${
+                            isClaimedView || isJustClaimed
+                              ? "text-green-600"
+                              : "text-black"
+                          }`}
+                        >
+                          {isClaimedView || isJustClaimed ? "✓ " : "+"}
+                          {displayDay.points}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {isClaimedView ? "Points Claimed" : "Points"}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Chain selector — only shown when authenticated */}
+                    {isAuthenticated && (
+                      <div className="w-full mb-4">
+                        <label className="block text-xs font-semibold text-gray-500 mb-2">
+                          Claim on
+                        </label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            disabled={isSwitchingChain}
+                            onClick={() => setChainDropdownOpen((o) => !o)}
+                            className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white/80 hover:bg-gray-50/80 transition-colors text-sm disabled:opacity-60"
+                          >
+                            <span className="flex items-center gap-2">
+                              <img
+                                src={selectedChain.icon}
+                                alt=""
+                                className="h-5 w-5 rounded-full"
+                              />
+                              <span className="font-medium text-gray-900">
+                                {selectedChain.name}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              size={16}
+                              className={`text-gray-500 transition-transform ${chainDropdownOpen ? "rotate-180" : ""}`}
+                            />
+                          </button>
+                          {chainDropdownOpen && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setChainDropdownOpen(false)}
+                                aria-hidden="true"
+                              />
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                                {(isPrivySession
+                                  ? CHECKIN_CHAINS.filter(
+                                      (c) => c.chainId !== SOLANA_CHAIN_ID,
+                                    )
+                                  : CHECKIN_CHAINS
+                                )
+                                  .filter((items) => {
+                                    return items.name !== selectedChain.name;
+                                  })
+                                  .map((chain) => (
+                                    <button
+                                      key={chain.chainId}
+                                      type="button"
+                                      disabled={isSwitchingChain}
+                                      onClick={() => handleChainSelect(chain)}
+                                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                                        selectedChainId === chain.chainId
+                                          ? "bg-purple-50 text-purple-700 font-medium"
+                                          : "hover:bg-gray-50 text-gray-700"
+                                      }`}
+                                    >
+                                      <img
+                                        src={chain.icon}
+                                        alt=""
+                                        className="h-5 w-5 rounded-full"
+                                      />
+                                      {chain.name}
+                                    </button>
+                                  ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Claim Button or Status */}
+                    {!isAuthenticated ? (
+                      <button
+                        onClick={() => {
+                          dispatch(setWalletModal(true));
+                          onClose();
+                        }}
+                        className="w-full px-8 py-3 rounded-xl font-semibold transition-all shadow-lg bg-black text-white hover:shadow-xl hover:scale-105"
+                      >
+                        Connect Wallet
+                      </button>
+                    ) : hasCheckedInToday ? (
+                      <div className="w-full px-8 py-3 rounded-xl font-semibold text-center bg-green-100 text-green-700 border-2 border-green-300">
+                        <span className="flex items-center justify-center gap-2 text-sm sm:text-base">
+                          <Check size={20} />
+                          Checked in today — next check-in in{" "}
+                          {formatCountdown(countdownSeconds)}
+                        </span>
+                      </div>
+                    ) : isClaimedView ? (
+                      <div className="w-full px-8 py-3 rounded-xl font-semibold text-center bg-green-100 text-green-700 border-2 border-green-300">
+                        <span className="flex items-center justify-center gap-2">
+                          <Check size={20} />
+                          Claimed
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleClaim}
+                        disabled={isJustClaimed || !activeDay || loading}
+                        className={`w-full px-8 py-3 rounded-xl font-semibold transition-all shadow-lg border-2 border-transparent ${
+                          isJustClaimed || loading
+                            ? "bg-green-500 text-white cursor-not-allowed"
+                            : "bg-black text-white hover:shadow-xl hover:scale-105"
+                        }`}
+                      >
+                        {loading ? (
+                          <span className="flex items-center justify-center gap-2">
+                            Claiming…
+                          </span>
+                        ) : isJustClaimed ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <Check size={20} />
+                            Claimed!
+                          </span>
+                        ) : (
+                          "Claim Reward"
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Right Side - Week Overview */}
+                  <div className="flex flex-col min-w-0 w-full">
+                    <div className="flex justify-between gap-3 align-center">
+                      <div className="text-sm font-semibold text-gray-600 mb-3 text-center md:text-left">
+                        Week Progress
+                      </div>
+                      <div className=" text-center text-sm text-gray-500">
+                        {/* <p>
+                    Come back daily to claim your rewards and maintain your
+                    streak! 🎁
+                  </p> */}
+                        {status?.secondsUntilReset != null &&
+                          status.secondsUntilReset > 0 && (
+                            <p className="mt-1 text-xs text-gray-400">
+                              Resets in{" "}
+                              {Math.floor(status.secondsUntilReset / 3600)}h{" "}
+                              {Math.floor(
+                                (status.secondsUntilReset % 3600) / 60,
+                              )}
+                              m
+                            </p>
+                          )}
+                      </div>
+                    </div>
+                    <div className="flex sm:grid flex-nowrap sm:grid-cols-1 overflow-x-auto sm:overflow-x-visible gap-2 sm:gap-3 sm:max-h-[22rem] overflow-y-auto p-1 w-full snap-x snap-mandatory scroll-smooth [-webkit-overflow-scrolling:touch]">
+                      {weekDays.map((day, index) => (
+                        <motion.div
+                          key={day.dayNumber || index}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          onClick={() => handleDayClick(day)}
+                          className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-xl transition-all flex-shrink-0 w-[70%] min-w-[70%] sm:w-auto sm:min-w-0 snap-start ${
+                            day.status === "active"
+                              ? "bg-black/5 border-2 border-black cursor-pointer shadow-md"
+                              : day.status === "claimed"
+                                ? "bg-green-50/60 border border-green-200 cursor-pointer hover:bg-green-100/80 hover:border-green-300"
+                                : "bg-gray-50/60 border border-gray-200"
+                          } ${
+                            selectedDay?.dayNumber === day.dayNumber &&
+                            day.status === "claimed"
+                              ? "ring-2 ring-green-400"
+                              : ""
+                          }`}
+                        >
+                          {/* Gift Icon */}
+                          <div
+                            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 ${
+                              day.status === "active"
+                                ? "bg-black"
+                                : day.status === "claimed"
+                                  ? "bg-green-500"
+                                  : "bg-gray-300"
+                            }`}
+                          >
+                            {day.status === "claimed" ? (
+                              <Package
+                                size={24}
+                                className="text-white"
+                                strokeWidth={2}
+                              />
+                            ) : day.status === "locked" ? (
+                              <Lock size={20} className="text-white" />
+                            ) : (
+                              <Gift size={24} className="text-white" />
+                            )}
+                          </div>
+
+                          {/* Day Info */}
+                          <div className="flex-1 min-w-0">
+                            <div
+                              className={`font-semibold text-sm sm:text-base truncate ${
+                                day.status === "active"
+                                  ? "text-black"
+                                  : day.status === "claimed"
+                                    ? "text-green-700"
+                                    : "text-gray-400"
+                              }`}
+                            >
+                              Day {day.dayNumber}
+                            </div>
+                            <div
+                              className={`text-xs sm:text-sm truncate ${
+                                day.status === "locked"
+                                  ? "text-gray-400"
+                                  : "text-gray-600"
+                              }`}
+                            >
+                              {day.points} points
+                            </div>
+                          </div>
+
+                          {/* Status Badge */}
+                          <div
+                            className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full flex-shrink-0 ${
+                              day.status === "active"
+                                ? "bg-black text-white"
+                                : day.status === "claimed"
+                                  ? "bg-green-600 text-white"
+                                  : "bg-gray-400 text-white"
+                            }`}
+                          >
+                            {day.status === "active"
+                              ? "Available"
+                              : day.status === "claimed"
+                                ? "Claimed"
+                                : "Locked"}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Note */}
+                <div className="mt-3 sm:mt-6 text-center text-sm text-gray-500 space-y-1">
+                  <p className="text-xs text-gray-600">
+                    Daily check-in resets at 00:00 UTC. One check-in per UTC day.
+                  </p>
+                  {status?.secondsUntilReset != null &&
+                    status.secondsUntilReset > 0 && (
+                      <p className="mt-1 text-xs text-gray-800">
+                        Daily bonus{" "}
+                        <span className="text-red-500 font-bold">resets</span>{" "}
+                        after you claim it for 7 days. Then a new cycle begins
+                      </p>
+                    )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+
+  return createPortal(modalContent, document.body);
+}
