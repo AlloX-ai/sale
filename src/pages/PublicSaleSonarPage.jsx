@@ -957,9 +957,20 @@ export function PublicSaleSonarPage() {
     walletBalanceUsd != null && wlNum > walletBalanceUsd;
   const belowMin = wlNum > 0 && wlNum < minUsd;
   const aboveMax = wlNum > maxUsd;
+  // Whitelist requires a Sonar login and a started KYC (in progress, in
+  // review or complete) — not necessarily a finished one.
+  const sonarEntityState = sonar.primaryEntity?.EntitySetupState;
+  const sonarKycStarted =
+    Boolean(sonarEntityState) &&
+    sonarEntityState !== EntitySetupState.NOT_STARTED &&
+    sonarEntityState !== EntitySetupState.FAILURE_FINAL;
+  const sonarWhitelistReady =
+    !sonar.configured ||
+    (sonar.authenticated && !sonar.entitiesLoading && sonarKycStarted);
   const wlValid =
     saleOpen &&
     !wlSubmitting &&
+    sonarWhitelistReady &&
     wlNum >= minUsd &&
     !aboveMax &&
     !insufficientBalance;
@@ -2226,43 +2237,52 @@ export function PublicSaleSonarPage() {
                                 }}
                                 disabled={
                                   needsSonarConnect
-                                    ? sonar.ready
+                                    ? !sonar.ready
                                     : !wlValid || sonarHasError
                                 }
                                 className="mt-auto w-full bg-black text-white font-semibold py-3.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                               >
-                                {
-                                  // needsSonarConnect ? (
-                                  //   <>
-                                  //     <img
-                                  //       src="https://cdn.allox.ai/allox/publicSale/sonarConnect.png"
-                                  //       alt=""
-                                  //       className="h-4 w-auto"
-                                  //       style={{
-                                  //         filter: "invert(1) brightness(1.4)",
-                                  //       }}
-                                  //     />
-                                  //     Connect with Sonar
-                                  //   </>
-                                  // ) :
-                                  !saleOpen
-                                    ? "Registration Closed"
-                                    : wlSubmitting
-                                      ? wlRetrying
-                                        ? "Verifying balance…"
+                                {needsSonarConnect ? (
+                                  <>
+                                    <img
+                                      src="https://cdn.allox.ai/allox/publicSale/sonarConnect.png"
+                                      alt=""
+                                      className="h-4 w-auto"
+                                      style={{
+                                        filter: "invert(1) brightness(1.4)",
+                                      }}
+                                    />
+                                    Connect with Sonar
+                                  </>
+                                ) : !saleOpen ? (
+                                  "Registration Closed"
+                                ) : wlSubmitting ? (
+                                  wlRetrying ? (
+                                    "Verifying balance…"
+                                  ) : isRegistered ? (
+                                    "Updating…"
+                                  ) : (
+                                    "Joining…"
+                                  )
+                                ) : sonar.configured &&
+                                  sonar.authenticated &&
+                                  sonar.entitiesLoading ? (
+                                  "Checking Sonar status…"
+                                ) : sonar.configured &&
+                                  sonar.authenticated &&
+                                  !sonarKycStarted ? (
+                                  "Start Sonar verification to join"
+                                ) : (
+                                  belowMin
+                                    ? `Minimum $${minUsd.toLocaleString()} required`
+                                    : aboveMax
+                                      ? `Maximum $${maxUsd.toLocaleString()} allowed`
+                                      : insufficientBalance
+                                        ? "Insufficient Balance"
                                         : isRegistered
-                                          ? "Updating…"
-                                          : "Joining…"
-                                      : belowMin
-                                        ? `Minimum $${minUsd.toLocaleString()} required`
-                                        : aboveMax
-                                          ? `Maximum $${maxUsd.toLocaleString()} allowed`
-                                          : insufficientBalance
-                                            ? "Insufficient Balance"
-                                            : isRegistered
-                                              ? "Update Allocation"
-                                              : "Join Whitelist"
-                                }
+                                          ? "Update Allocation"
+                                          : "Join Whitelist"
+                                )}
                               </button>
                             </div>
                           </div>
