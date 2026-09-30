@@ -35,9 +35,14 @@ type NetworkOption = {
 
 type NetworkSelectorProps = {
   onDisconnectClick: () => void;
+  /** Limit the dropdown to Base (public sale). Wrong chain shows the error icon. */
+  baseNetworkOnly?: boolean;
 };
 
-export function NetworkSelector({ onDisconnectClick }: NetworkSelectorProps) {
+export function NetworkSelector({
+  onDisconnectClick,
+  baseNetworkOnly = false,
+}: NetworkSelectorProps) {
   const dispatch = useDispatch();
   const [isOpen, setIsOpen] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -130,8 +135,13 @@ export function NetworkSelector({ onDisconnectClick }: NetworkSelectorProps) {
     },
   ];
 
+  const selectableNetworks = baseNetworkOnly
+    ? networks.filter((network) => network.chainId === 8453)
+    : networks;
+
   const selectedNetwork =
-    networks.find((network) => network.chainId === chainId) ?? errorNetwork[0];
+    selectableNetworks.find((network) => network.chainId === chainId) ??
+    errorNetwork[0];
 
   const isMetaMaskSolanaWallet = () =>
     solanaWallet?.adapter?.name?.toLowerCase?.().includes("metamask") ?? false;
@@ -477,7 +487,7 @@ export function NetworkSelector({ onDisconnectClick }: NetworkSelectorProps) {
           ></div>
           <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl p-2 min-w-[210px] z-20 animate-fade-in">
             <OutsideClickHandler onOutsideClick={() => setIsOpen(false)}>
-              {networks.map((network) => (
+              {selectableNetworks.map((network) => (
                 <button
                   key={network.name}
                   onClick={() => manageSwitchNetwork(network)}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./useAuth";
 import {
   fetchPublicSaleWhitelistStatus,
+  normalizePublicSaleWhitelistStatus,
   registerPublicSaleWhitelist,
 } from "../utils/publicSaleApi";
 
@@ -97,12 +98,14 @@ export function usePublicSaleWhitelist() {
             // fresh server-side numbers — fold them into status so the UI
             // renders against what the backend actually verified.
             if (err?.status === 422 && err?.data) {
-              const { walletBalanceUsd, balanceBreakdown } = err.data;
+              const normalized = normalizePublicSaleWhitelistStatus(err.data);
               setStatus((prev) => ({
                 ...(prev ?? {}),
-                ...(walletBalanceUsd != null ? { walletBalanceUsd } : {}),
-                ...(Array.isArray(balanceBreakdown)
-                  ? { balanceBreakdown }
+                ...(normalized.walletBalanceUsd != null
+                  ? { walletBalanceUsd: normalized.walletBalanceUsd }
+                  : {}),
+                ...(Array.isArray(normalized.balanceBreakdown)
+                  ? { balanceBreakdown: normalized.balanceBreakdown }
                   : {}),
               }));
             }

@@ -43,7 +43,10 @@ import {
 } from "recharts";
 import { Link } from "react-router";
 import { useDispatch, useSelector } from "react-redux";
-import { setWalletModal } from "../redux/slices/walletSlice";
+import { setWalletModal, setChainId } from "../redux/slices/walletSlice";
+import { useConnection, useSwitchChain } from "wagmi";
+import { PUBLIC_SALE_CHAIN_ID } from "../utils/publicSaleApi";
+import { toast } from "../utils/toast";
 import Countdown from "react-countdown";
 import { usePublicSaleWhitelist } from "../hooks/usePublicSaleWhitelist";
 import { usePrivateSale } from "../hooks/usePrivateSale";
@@ -879,6 +882,32 @@ export function PublicSaleSonarPage() {
   const dispatch = useDispatch();
   const isConnected = useSelector((state) => state.wallet.isConnected);
   const walletAddress = useSelector((state) => state.wallet.address);
+  const walletType = useSelector((state) => state.wallet.walletType);
+  const chainId = useSelector((state) => state.wallet.chainId);
+  const { chainId: wagmiChainId } = useConnection();
+  const switchChain = useSwitchChain();
+  const isSolanaWallet = walletType === "solana";
+  const currentEvmChainId = isSolanaWallet ? null : (wagmiChainId ?? chainId);
+  const isOnBaseChain = currentEvmChainId === PUBLIC_SALE_CHAIN_ID;
+  const needsBaseSwitch = isConnected && !isSolanaWallet && !isOnBaseChain;
+
+  const switchToBase = async () => {
+    if (!switchChain.mutateAsync) {
+      toast.error(
+        "Unable to switch chain. Reconnect your wallet and try again.",
+      );
+      return;
+    }
+    try {
+      await switchChain.mutateAsync({ chainId: PUBLIC_SALE_CHAIN_ID });
+      dispatch(setChainId(PUBLIC_SALE_CHAIN_ID));
+    } catch (err) {
+      console.error("Switch to Base:", err);
+      toast.error(
+        "Failed to switch to Base. Confirm the network switch in your wallet.",
+      );
+    }
+  };
 
   const {
     status: wlStatus,
@@ -971,6 +1000,8 @@ export function PublicSaleSonarPage() {
     saleOpen &&
     !wlSubmitting &&
     sonarWhitelistReady &&
+    isConnected &&
+    isOnBaseChain &&
     wlNum >= minUsd &&
     !aboveMax &&
     !insufficientBalance;
@@ -986,6 +1017,14 @@ export function PublicSaleSonarPage() {
   }, [registration]);
 
   const handleJoin = async () => {
+    if (needsBaseSwitch) {
+      await switchToBase();
+      return;
+    }
+    if (sonar.configured && !sonar.authenticated) {
+      sonar.connectSonar();
+      return;
+    }
     if (!wlValid) return;
     setSubmitError(null);
     try {
@@ -1118,9 +1157,16 @@ export function PublicSaleSonarPage() {
   const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
   const liveMinUsd = isPrivateSale ? privateSale.minContributionUsd : 100;
   const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
+  const publicLiveSonarReady =
+    !sonar.configured ||
+    (sonar.authenticated && sonarKycStarted && !sonarHasError);
   const liveCanSubmit = isPrivateSale
     ? privateSale.canSubmit
-    : liveNum >= liveMinUsd && liveNum <= liveMaxUsd;
+    : isConnected &&
+      isOnBaseChain &&
+      publicLiveSonarReady &&
+      liveNum >= liveMinUsd &&
+      liveNum <= liveMaxUsd;
   const privateRoundFdvM = isPrivateSale
     ? privateSale.plans[0]?.fdv
       ? Math.round(privateSale.plans[0].fdv / 1_000_000)
@@ -2060,9 +2106,9 @@ export function PublicSaleSonarPage() {
                                                 </p>
                                               )}
                                               <p className="text-[11px] text-gray-400 leading-relaxed pt-2 border-t border-gray-100">
-                                                Balance counts USDT, USDC, BNB
-                                                and ETH across BNB Chain,
-                                                Ethereum and Base combined.
+                                                Balance counts USDC and USDT on
+                                                Base only (the public sale
+                                                network).
                                               </p>
                                             </div>
                                           </motion.div>
@@ -2179,6 +2225,17 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
 
+                              {needsBaseSwitch && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-amber-800">
+                                    Switch your wallet to Base to verify balance
+                                    and {isRegistered ? "update" : "reserve"}{" "}
+                                    your allocation.
+                                  </p>
+                                </div>
+                              )}
+
                               <AnimatePresence>
                                 {wlRetrying && (
                                   <motion.div
@@ -2233,12 +2290,18 @@ export function PublicSaleSonarPage() {
                                     sonar.connectSonar();
                                     return;
                                   }
+                                  if (needsBaseSwitch) {
+                                    switchToBase();
+                                    return;
+                                  }
                                   handleJoin();
                                 }}
                                 disabled={
                                   needsSonarConnect
                                     ? !sonar.ready
-                                    : !wlValid || sonarHasError
+                                    : needsBaseSwitch
+                                      ? false
+                                      : !wlValid || sonarHasError
                                 }
                                 className="mt-auto w-full bg-black text-white font-semibold py-3.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                               >
@@ -2272,6 +2335,8 @@ export function PublicSaleSonarPage() {
                                   sonar.authenticated &&
                                   !sonarKycStarted ? (
                                   "Start Sonar verification to join"
+                                ) : needsBaseSwitch ? (
+                                  "Switch to Base"
                                 ) : (
                                   belowMin
                                     ? `Minimum $${minUsd.toLocaleString()} required`
@@ -3030,15 +3095,37 @@ export function PublicSaleSonarPage() {
                         <button
                           type="button"
                           disabled={
-                            isPrivateSale && !isConnected
-                              ? false
-                              : isPrivateSale && isConnected && !isAuthenticated
+                            isPrivateSale && privateSale.contributing
+                              ? true
+                              : isPrivateSale && !isConnected
                                 ? false
-                                : !liveCanSubmit ||
-                                  (isPrivateSale && privateSale.contributing)
+                                : isPrivateSale && isConnected && !isAuthenticated
+                                  ? false
+                                  : !isPrivateSale && !isConnected
+                                    ? false
+                                    : !isPrivateSale && needsSonarConnect
+                                      ? !sonar.ready
+                                      : !isPrivateSale && needsBaseSwitch
+                                        ? false
+                                        : !liveCanSubmit ||
+                                          (isPrivateSale && privateSale.contributing)
                           }
                           onClick={() => {
-                            if (!isPrivateSale) return;
+                            if (!isPrivateSale) {
+                              if (!isConnected) {
+                                dispatch(setWalletModal(true));
+                                return;
+                              }
+                              if (needsSonarConnect) {
+                                sonar.connectSonar();
+                                return;
+                              }
+                              if (needsBaseSwitch) {
+                                switchToBase();
+                                return;
+                              }
+                              return;
+                            }
                             if (!isConnected) {
                               dispatch(setWalletModal(true));
                               return;
@@ -3054,6 +3141,11 @@ export function PublicSaleSonarPage() {
                             (isPrivateSale &&
                               isConnected &&
                               !isAuthenticated) ||
+                            (!isPrivateSale &&
+                              isConnected &&
+                              (needsSonarConnect ||
+                                needsBaseSwitch ||
+                                liveCanSubmit)) ||
                             (liveCanSubmit && !privateSale.contributing)
                               ? "bg-black text-white hover:bg-gray-800 active:scale-[0.99]"
                               : "bg-gray-200 text-gray-500 cursor-not-allowed"
@@ -3065,25 +3157,38 @@ export function PublicSaleSonarPage() {
                               ? "Connect Wallet"
                               : isPrivateSale && !isAuthenticated
                                 ? "Sign In"
-                                : isPrivateSale &&
-                                    privateSale.eligibilityLoading
-                                  ? "Checking eligibility…"
-                                  : isPrivateSale && !privateSale.isEligible
-                                    ? "Not eligible"
-                                    : isPrivateSale && !privateSale.saleActive
-                                      ? privateSale.saleEnded
-                                        ? "Sale Ended"
-                                        : "Sale Not Active"
-                                      : isPrivateSale &&
-                                          !privateSale.isSelectedTierEligible
-                                        ? "Tier not available"
-                                        : liveNum <= 0
-                                          ? "Enter Amount"
-                                          : liveNum < liveMinUsd
-                                            ? `Minimum is $${liveMinUsd.toLocaleString()}`
-                                            : liveNum > liveMaxUsd
-                                              ? "Amount exceeds maximum"
-                                              : "Invest"}
+                                : !isPrivateSale && !isConnected
+                                  ? "Connect Wallet"
+                                  : !isPrivateSale && needsSonarConnect
+                                    ? "Connect with Sonar"
+                                    : !isPrivateSale && needsBaseSwitch
+                                      ? "Switch to Base"
+                                      : !isPrivateSale &&
+                                          sonar.configured &&
+                                          sonar.authenticated &&
+                                          !sonarKycStarted
+                                        ? "Complete Sonar verification"
+                                        : isPrivateSale &&
+                                            privateSale.eligibilityLoading
+                                          ? "Checking eligibility…"
+                                          : isPrivateSale &&
+                                              !privateSale.isEligible
+                                            ? "Not eligible"
+                                            : isPrivateSale &&
+                                                !privateSale.saleActive
+                                              ? privateSale.saleEnded
+                                                ? "Sale Ended"
+                                                : "Sale Not Active"
+                                              : isPrivateSale &&
+                                                  !privateSale.isSelectedTierEligible
+                                                ? "Tier not available"
+                                                : liveNum <= 0
+                                                  ? "Enter Amount"
+                                                  : liveNum < liveMinUsd
+                                                    ? `Minimum is $${liveMinUsd.toLocaleString()}`
+                                                    : liveNum > liveMaxUsd
+                                                      ? "Amount exceeds maximum"
+                                                      : "Invest"}
                         </button>
                       </>
                     </div>
