@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./useAuth";
 import {
   fetchPublicSaleWhitelistStatus,
+  linkPublicSaleWhitelistSonar,
   normalizePublicSaleWhitelistStatus,
   registerPublicSaleWhitelist,
 } from "../utils/publicSaleApi";
@@ -64,7 +65,7 @@ export function usePublicSaleWhitelist() {
     }
   }, [isAuthenticated, refresh]);
 
-  const submit = useCallback(async ({ allocationUsd, email }) => {
+  const submit = useCallback(async ({ allocationUsd, email, sonarEntityId }) => {
     setSubmitting(true);
     setRetrying(false);
     try {
@@ -74,6 +75,7 @@ export function usePublicSaleWhitelist() {
           const data = await registerPublicSaleWhitelist({
             allocationUsd,
             email,
+            sonarEntityId,
           });
           if (mountedRef.current && data?.registration) {
             setStatus((prev) => ({
@@ -132,12 +134,33 @@ export function usePublicSaleWhitelist() {
     }
   }, []);
 
+  // Link a Sonar entity to an existing registration (does not change the
+  // allocation). 404 means the wallet has no registration yet.
+  const linkSonar = useCallback(async (sonarEntityId) => {
+    const data = await linkPublicSaleWhitelistSonar({ sonarEntityId });
+    if (mountedRef.current) {
+      setStatus((prev) =>
+        prev?.registration
+          ? {
+              ...prev,
+              registration: data?.registration ?? {
+                ...prev.registration,
+                sonarEntityId,
+              },
+            }
+          : prev,
+      );
+    }
+    return data;
+  }, []);
+
   return {
     status,
     statusLoading,
     statusError,
     refresh,
     submit,
+    linkSonar,
     submitting,
     retrying,
   };

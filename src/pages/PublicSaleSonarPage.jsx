@@ -929,6 +929,7 @@ export function PublicSaleSonarPage() {
     status: wlStatus,
     statusLoading: wlStatusLoading,
     submit: submitWhitelist,
+    linkSonar: linkWhitelistSonar,
     submitting: wlSubmitting,
     retrying: wlRetrying,
   } = usePublicSaleWhitelist();
@@ -1034,6 +1035,35 @@ export function PublicSaleSonarPage() {
     setEmail((prev) => (prev === "" ? (registration.email ?? "") : prev));
   }, [registration]);
 
+  // Sonar entity to attach to the whitelist registration (null until the
+  // user connects Sonar and their entity loads).
+  const sonarEntityId = sonar.authenticated
+    ? (sonar.primaryEntity?.EntityID ?? null)
+    : null;
+
+  // Registered before connecting Sonar (or before this field existed): link
+  // the entity to the existing registration once it is available. Tracked per
+  // entity so a failure is not retried in a loop.
+  const sonarLinkAttemptRef = useRef(null);
+  useEffect(() => {
+    if (!isRegistered || !sonarEntityId || wlSubmitting) return;
+    if (registration?.sonarEntityId) return;
+    if (sonarLinkAttemptRef.current === sonarEntityId) return;
+    sonarLinkAttemptRef.current = sonarEntityId;
+    linkWhitelistSonar(sonarEntityId).catch((err) => {
+      // 404 → no registration yet; the next /whitelist POST carries the ID.
+      if (err?.status !== 404) {
+        console.error("Failed to link Sonar to whitelist registration:", err);
+      }
+    });
+  }, [
+    isRegistered,
+    registration?.sonarEntityId,
+    sonarEntityId,
+    wlSubmitting,
+    linkWhitelistSonar,
+  ]);
+
   const handleJoin = async () => {
     if (needsBaseSwitch) {
       await switchToBase();
@@ -1046,7 +1076,11 @@ export function PublicSaleSonarPage() {
     if (!wlValid) return;
     setSubmitError(null);
     try {
-      await submitWhitelist({ allocationUsd: wlNum, email });
+      await submitWhitelist({
+        allocationUsd: wlNum,
+        email,
+        sonarEntityId: sonarEntityId ?? undefined,
+      });
       setWlStep("success");
       setSuccessCountdown(5);
     } catch (err) {
