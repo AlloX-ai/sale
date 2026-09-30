@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2, LogOut } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import OutsideClickHandler from "react-outside-click-handler";
 import { toast } from "../utils/toast";
@@ -501,11 +501,12 @@ export function NetworkSelector({
                   <span>{network.name}</span>
                 </button>
               ))}
-              <div className="border-t border-gray-200/50 w-full my-3" />
+              <div className="border-t border-gray-200/50 w-full my-2" />
               <button
-                className="w-full text-[#F54900] px-4 py-2 flex items-center gap-2 rounded-xl hover:bg-orange-100"
+                className="w-full text-[#F54900] text-xs font-medium px-4 py-1.5 flex items-center gap-2 rounded-lg hover:bg-orange-100 transition-colors"
                 onClick={onDisconnectClick}
               >
+                <LogOut className="w-3.5 h-3.5" />
                 Disconnect
               </button>
               {isSwitching && (

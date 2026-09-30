@@ -667,6 +667,22 @@ function shortenTxHash(hash) {
   return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
 }
 
+// Whitelist allocation limits (USD)
+const WL_MIN_USD = 10;
+const WL_MAX_USD = 200_000;
+
+// Keep only a positive decimal (max 2 fraction digits) and clamp it to the max.
+const sanitizeUsdInput = (raw, max) => {
+  let v = raw.replace(/,/g, "").replace(/[^\d.]/g, "");
+  const dot = v.indexOf(".");
+  if (dot !== -1) {
+    v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+  }
+  v = v.replace(/^0+(?=\d)/, "");
+  if (v !== "" && v !== "." && parseFloat(v) > max) return String(max);
+  return v;
+};
+
 const REF_AMOUNTS = [
   "$100",
   "$500",
@@ -932,8 +948,8 @@ export function PublicSaleSonarPage() {
     (Boolean(sonar.entitiesError) || sonar.status?.tone === "red");
   // console.log("wlStatus", wlStatus);
   const saleOpen = wlStatus ? wlStatus.open !== false : true;
-  const minUsd = wlStatus?.minUsd ?? 10;
-  const maxUsd = wlStatus?.maxUsd ?? 100000;
+  const minUsd = WL_MIN_USD;
+  const maxUsd = WL_MAX_USD;
   const walletBalanceUsd = wlStatus?.walletBalanceUsd ?? null;
   const balanceBreakdown = Array.isArray(wlStatus?.balanceBreakdown)
     ? wlStatus.balanceBreakdown
@@ -984,7 +1000,7 @@ export function PublicSaleSonarPage() {
   const wlNum = parseFloat(wlAmount) || 0;
   const insufficientBalance =
     walletBalanceUsd != null && wlNum > walletBalanceUsd;
-  const belowMin = wlNum > 0 && wlNum < minUsd;
+  const belowMin = wlAmount !== "" && wlNum < minUsd;
   const aboveMax = wlNum > maxUsd;
   // Whitelist requires a Sonar login and a started KYC (in progress, in
   // review or complete) — not necessarily a finished one.
@@ -1011,7 +1027,9 @@ export function PublicSaleSonarPage() {
   useEffect(() => {
     if (!registration) return;
     setWlAmount((prev) =>
-      prev === "" ? String(registration.allocationUsd ?? "") : prev,
+      prev === ""
+        ? sanitizeUsdInput(String(registration.allocationUsd ?? ""), maxUsd)
+        : prev,
     );
     setEmail((prev) => (prev === "" ? (registration.email ?? "") : prev));
   }, [registration]);
@@ -1055,7 +1073,7 @@ export function PublicSaleSonarPage() {
   const lowerToBalance = () => {
     if (walletBalanceUsd == null) return;
     const lowered = Math.min(Math.floor(walletBalanceUsd), maxUsd);
-    setWlAmount(String(Math.max(lowered, 0)));
+    setWlAmount(lowered > 0 ? String(lowered) : "");
     setSubmitError(null);
   };
 
@@ -2139,27 +2157,40 @@ export function PublicSaleSonarPage() {
                                     $
                                   </span>
                                   <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
+                                    autoComplete="off"
                                     value={wlAmount}
                                     onChange={(e) => {
-                                      setWlAmount(e.target.value);
+                                      setWlAmount(
+                                        sanitizeUsdInput(e.target.value, maxUsd),
+                                      );
                                       setSubmitError(null);
                                     }}
                                     disabled={!saleOpen}
-                                    placeholder={`Enter amount (min. $${minUsd.toLocaleString()})`}
-                                    className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:outline-none text-sm font-semibold bg-white/80 transition-colors disabled:opacity-50 ${insufficientBalance ? "border-red-300 focus:border-red-500" : "border-gray-200 focus:border-black"}`}
+                                    placeholder={`$${minUsd.toLocaleString()} – $${maxUsd.toLocaleString()}`}
+                                    aria-invalid={belowMin || aboveMax || insufficientBalance}
+                                    className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:outline-none text-sm font-semibold bg-white/80 transition-colors disabled:opacity-50 ${insufficientBalance || belowMin || aboveMax ? "border-red-300 focus:border-red-500" : "border-gray-200 focus:border-black"}`}
                                   />
                                 </div>
 
-                                {wlNum >= minUsd &&
-                                  !insufficientBalance &&
-                                  !aboveMax && (
-                                    <div className="flex justify-end mt-1.5 px-0.5">
+                                <div className="flex justify-between gap-2 mt-1.5 px-0.5">
+                                  <span
+                                    className={`text-xs ${belowMin || aboveMax ? "text-red-600 font-medium" : "text-gray-400"}`}
+                                  >
+                                    {belowMin
+                                      ? `Minimum is $${minUsd.toLocaleString()}`
+                                      : `Min $${minUsd.toLocaleString()} · Max $${maxUsd.toLocaleString()}`}
+                                  </span>
+                                  {wlNum >= minUsd &&
+                                    !aboveMax &&
+                                    walletBalanceUsd != null &&
+                                    !insufficientBalance && (
                                       <span className="text-xs text-green-600 font-medium">
                                         ✓ Sufficient balance
                                       </span>
-                                    </div>
-                                  )}
+                                    )}
+                                </div>
 
                                 <AnimatePresence>
                                   {insufficientBalance && !submitError && (
