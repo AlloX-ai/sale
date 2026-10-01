@@ -242,7 +242,7 @@ export function Header({
                   {/* <div className="hidden xl:flex"> */}
                   <NetworkSelector
                     onDisconnectClick={onDisconnectClick}
-                    baseNetworkOnly
+                    saleNetworkOnly
                   />
                   {/* </div> */}
                   <div className="pe-2 xl:flex items-center gap-2">

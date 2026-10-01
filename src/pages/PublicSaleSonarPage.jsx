@@ -46,7 +46,11 @@ import { Link } from "react-router";
 import { useDispatch, useSelector } from "react-redux";
 import { setWalletModal, setChainId } from "../redux/slices/walletSlice";
 import { useConnection, useSwitchChain } from "wagmi";
-import { PUBLIC_SALE_CHAIN_ID } from "../utils/publicSaleApi";
+import {
+  PUBLIC_SALE_CHAIN_ID,
+  PUBLIC_SALE_CHAIN_NAME,
+  PUBLIC_SALE_CHAIN_LOGO,
+} from "../utils/publicSaleApi";
 import { toast } from "../utils/toast";
 import Countdown from "react-countdown";
 import { usePublicSaleWhitelist } from "../hooks/usePublicSaleWhitelist";
@@ -387,7 +391,7 @@ const SALE_KIND_META = {
       },
       {
         title: "Network",
-        value: "Base • USDC • USDT",
+        value: "Ethereum • USDC • USDT",
       },
     ],
     mica: true,
@@ -610,7 +614,7 @@ const MOCK_LIVE_INVESTMENTS = [
     date: "Aug 12, 2026",
     amount: 2500,
     token: "USDC",
-    network: "Base",
+    network: "Ethereum",
     txHash: "0x7a3f9c2e1b8d4a6f0e5c9b7d2a1f4e8c3b6d9a0e5f2c8b1d4a7e0c3f6b9d2a5",
   },
   {
@@ -618,7 +622,7 @@ const MOCK_LIVE_INVESTMENTS = [
     date: "Aug 11, 2026",
     amount: 1000,
     token: "USDT",
-    network: "Base",
+    network: "Ethereum",
     txHash: "0x1c8e4b7a2d5f0e9c6b3a8d1f4e7c0b5a2d9f6e3c8b1a4d7e0f5c2b9a6d3e8f1",
   },
   {
@@ -935,10 +939,11 @@ export function PublicSaleSonarPage() {
   const switchChain = useSwitchChain();
   const isSolanaWallet = walletType === "solana";
   const currentEvmChainId = isSolanaWallet ? null : (wagmiChainId ?? chainId);
-  const isOnBaseChain = currentEvmChainId === PUBLIC_SALE_CHAIN_ID;
-  const needsBaseSwitch = isConnected && !isSolanaWallet && !isOnBaseChain;
+  const isOnSaleChain = currentEvmChainId === PUBLIC_SALE_CHAIN_ID;
+  const needsSaleChainSwitch =
+    isConnected && !isSolanaWallet && !isOnSaleChain;
 
-  const switchToBase = async () => {
+  const switchToSaleChain = async () => {
     if (!switchChain.mutateAsync) {
       toast.error(
         "Unable to switch chain. Reconnect your wallet and try again.",
@@ -949,9 +954,9 @@ export function PublicSaleSonarPage() {
       await switchChain.mutateAsync({ chainId: PUBLIC_SALE_CHAIN_ID });
       dispatch(setChainId(PUBLIC_SALE_CHAIN_ID));
     } catch (err) {
-      console.error("Switch to Base:", err);
+      console.error(`Switch to ${PUBLIC_SALE_CHAIN_NAME}:`, err);
       toast.error(
-        "Failed to switch to Base. Confirm the network switch in your wallet.",
+        `Failed to switch to ${PUBLIC_SALE_CHAIN_NAME}. Confirm the network switch in your wallet.`,
       );
     }
   };
@@ -1059,7 +1064,7 @@ export function PublicSaleSonarPage() {
     !wlSubmitting &&
     sonarWhitelistReady &&
     isConnected &&
-    isOnBaseChain &&
+    isOnSaleChain &&
     wlNum >= minUsd &&
     !aboveMax &&
     !insufficientBalance;
@@ -1106,8 +1111,8 @@ export function PublicSaleSonarPage() {
   ]);
 
   const handleJoin = async () => {
-    if (needsBaseSwitch) {
-      await switchToBase();
+    if (needsSaleChainSwitch) {
+      await switchToSaleChain();
       return;
     }
     if (sonar.configured && !sonar.authenticated) {
@@ -1256,7 +1261,7 @@ export function PublicSaleSonarPage() {
   const liveCanSubmit = isPrivateSale
     ? privateSale.canSubmit
     : isConnected &&
-      isOnBaseChain &&
+      isOnSaleChain &&
       publicLiveSonarReady &&
       liveNum >= liveMinUsd &&
       liveNum <= liveMaxUsd;
@@ -1353,7 +1358,7 @@ export function PublicSaleSonarPage() {
     {
       title: "Commit funds",
       body: saleOpen
-        ? "Reserve your allocation below. Only verified accounts can commit. Sale Network: Base • USDC • USDT"
+        ? "Reserve your allocation below. Only verified accounts can commit. Sale Network: Ethereum • USDC • USDT"
         : "Only verified accounts can commit once registration opens.",
       done: sonarKycFundsCommitted && sonarKycVerified,
     },
@@ -2385,7 +2390,7 @@ export function PublicSaleSonarPage() {
                                               )}
                                               <p className="text-[11px] text-gray-400 leading-relaxed pt-2 border-t border-gray-100">
                                                 Balance counts USDC and USDT on
-                                                Base only (the public sale
+                                                Ethereum only (the public sale
                                                 network).
                                               </p>
                                             </div>
@@ -2516,11 +2521,11 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
 
-                              {needsBaseSwitch && (
+                              {needsSaleChainSwitch && (
                                 <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                                   <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <p className="text-xs text-amber-800">
-                                    Switch your wallet to Base to verify balance
+                                    Switch your wallet to Ethereum to verify balance
                                     and {isRegistered ? "update" : "reserve"}{" "}
                                     your allocation.
                                   </p>
@@ -2581,8 +2586,8 @@ export function PublicSaleSonarPage() {
                                     sonar.connectSonar();
                                     return;
                                   }
-                                  if (needsBaseSwitch) {
-                                    switchToBase();
+                                  if (needsSaleChainSwitch) {
+                                    switchToSaleChain();
                                     return;
                                   }
                                   handleJoin();
@@ -2590,7 +2595,7 @@ export function PublicSaleSonarPage() {
                                 disabled={
                                   needsSonarConnect
                                     ? !sonar.ready
-                                    : needsBaseSwitch
+                                    : needsSaleChainSwitch
                                       ? false
                                       : !wlValid || sonarHasError
                                 }
@@ -2624,8 +2629,8 @@ export function PublicSaleSonarPage() {
                                   "Checking Sonar status…"
                                 ) : sonarBlockedLabel ? (
                                   sonarBlockedLabel
-                                ) : needsBaseSwitch ? (
-                                  "Switch to Base"
+                                ) : needsSaleChainSwitch ? (
+                                  `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
                                 ) : (
                                   belowMin
                                     ? `Minimum $${minUsd.toLocaleString()} required`
@@ -2762,15 +2767,18 @@ export function PublicSaleSonarPage() {
                                 : "Pick a plan, enter an amount, then review before confirming."}
                             </p>
                           </div>
-                          <div className="flex items-center gap-1 rounded-lg   p-1">
-                            <p className="text-sm text-gray-500 mt-0.5">
-                              Network:
-                            </p>
-                            <img
-                              src="https://cdn.allox.ai/allox/networks/baseLarge.svg"
-                              alt="Network"
-                              className="w-14 h-14"
-                            />
+                          <div className="flex items-center gap-2 rounded-lg p-1">
+                            <p className="text-sm text-gray-500">Network:</p>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1">
+                              <img
+                                src={PUBLIC_SALE_CHAIN_LOGO}
+                                alt=""
+                                className="w-5 h-5 rounded-full"
+                              />
+                              <span className="text-sm font-semibold text-gray-900">
+                                {PUBLIC_SALE_CHAIN_NAME}
+                              </span>
+                            </span>
                           </div>
                         </div>
                         {/* <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3394,7 +3402,7 @@ export function PublicSaleSonarPage() {
                                     ? false
                                     : !isPrivateSale && needsSonarConnect
                                       ? !sonar.ready
-                                      : !isPrivateSale && needsBaseSwitch
+                                      : !isPrivateSale && needsSaleChainSwitch
                                         ? false
                                         : !liveCanSubmit ||
                                           (isPrivateSale && privateSale.contributing)
@@ -3409,8 +3417,8 @@ export function PublicSaleSonarPage() {
                                 sonar.connectSonar();
                                 return;
                               }
-                              if (needsBaseSwitch) {
-                                switchToBase();
+                              if (needsSaleChainSwitch) {
+                                switchToSaleChain();
                                 return;
                               }
                               return;
@@ -3433,7 +3441,7 @@ export function PublicSaleSonarPage() {
                             (!isPrivateSale &&
                               isConnected &&
                               (needsSonarConnect ||
-                                needsBaseSwitch ||
+                                needsSaleChainSwitch ||
                                 liveCanSubmit)) ||
                             (liveCanSubmit && !privateSale.contributing)
                               ? "bg-black text-white hover:bg-gray-800 active:scale-[0.99]"
@@ -3450,8 +3458,8 @@ export function PublicSaleSonarPage() {
                                   ? "Connect Wallet"
                                   : !isPrivateSale && needsSonarConnect
                                     ? "Connect with Sonar"
-                                    : !isPrivateSale && needsBaseSwitch
-                                      ? "Switch to Base"
+                                    : !isPrivateSale && needsSaleChainSwitch
+                                      ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
                                       : !isPrivateSale && sonarBlockedLabel
                                         ? sonarBlockedLabel
                                         : isPrivateSale &&
@@ -3554,7 +3562,7 @@ export function PublicSaleSonarPage() {
                                           ? CHAIN_EXPLORERS[chainKey] ||
                                             CHAIN_EXPLORERS.BSC
                                           : TX_EXPLORERS[inv.network] ||
-                                            TX_EXPLORERS.Base;
+                                            TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME];
                                         const token = String(
                                           inv.token || "",
                                         ).toUpperCase();
