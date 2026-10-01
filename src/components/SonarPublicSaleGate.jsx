@@ -32,8 +32,12 @@ const INVESTING_REGION_LABELS = {
  * `eligible` is the single gate for whitelist and purchase: only entities
  * with completed KYC and SaleEligibility.ELIGIBLE may participate.
  * `buttonLabel` is a short reason shown on blocked CTAs.
+ * `phase` ("whitelist" | "live") tailors the copy to the current sale state.
  */
-export function describeSonarEntity(entity) {
+export function describeSonarEntity(entity, phase = "whitelist") {
+  const isLive = phase === "live";
+  const joinGoal = isLive ? "participate in public sale" : "join the whitelist";
+  const joinVerb = isLive ? "participate" : "join";
   if (!entity) {
     return {
       tone: "amber",
@@ -54,8 +58,8 @@ export function describeSonarEntity(entity) {
       tone: "amber",
       title: "Verification not started",
       detail:
-        "Start identity and eligibility checks on Sonar. Only verified, eligible accounts can join the whitelist.",
-      buttonLabel: "Verify on Sonar to join",
+        `Start identity and eligibility checks on Sonar. Only verified, eligible accounts can ${joinGoal}.`,
+      buttonLabel: `Verify on Sonar to ${joinVerb}`,
       eligible: false,
       needsSetup: true,
     };
@@ -71,8 +75,8 @@ export function describeSonarEntity(entity) {
       detail:
         setup === EntitySetupState.READY_FOR_REVIEW
           ? "Your details are ready. Submit them for review on Sonar to continue."
-          : "Your verification is in progress. Finish the remaining steps on Sonar to join the whitelist.",
-      buttonLabel: "Finish verification to join",
+          : `Your verification is in progress. Finish the remaining steps on Sonar to ${joinGoal}.`,
+      buttonLabel: `Finish verification to ${joinVerb}`,
       eligible: false,
       needsSetup: true,
     };
@@ -83,7 +87,7 @@ export function describeSonarEntity(entity) {
       tone: "gray",
       title: "Verification under review",
       detail:
-        "Sonar is reviewing your documents. You can join the whitelist as soon as you're approved.",
+        `Sonar is reviewing your documents. You can ${joinGoal} as soon as you're approved.`,
       buttonLabel: "Verification under review",
       eligible: false,
     };
@@ -119,7 +123,7 @@ export function describeSonarEntity(entity) {
       title: "Verification rejected",
       detail:
         "Sonar rejected this entity's verification, so it can't take part in this sale. Contact Sonar support if you think this is a mistake.",
-      buttonLabel: "Not eligible to join",
+      buttonLabel: `Not eligible to ${joinVerb}`,
       eligible: false,
     };
   }
@@ -142,7 +146,7 @@ export function describeSonarEntity(entity) {
         detail: `Your verification is complete, but this entity doesn't meet the sale's eligibility rules${
           region ? ` (investing region on Sonar: ${region})` : ""
         }. If you have another entity, switch to it from the Sonar menu at the top.`,
-        buttonLabel: "Not eligible to join",
+        buttonLabel: `Not eligible to ${joinVerb}`,
         eligible: false,
       };
     }
@@ -192,9 +196,14 @@ const TONE_STYLES = {
 /**
  * Hook for public-sale Sonar OAuth + entity status.
  * `selectedEntityId` picks which of the user's entities drives `activeEntity`
- * and `status`; falls back to the first entity.
+ * and `status`; falls back to the first entity. `phase` is passed through to
+ * `describeSonarEntity` for sale-state-specific copy.
  */
-export function useSonarPublicSaleAccess(walletAddress, selectedEntityId) {
+export function useSonarPublicSaleAccess(
+  walletAddress,
+  selectedEntityId,
+  phase = "whitelist",
+) {
   const { ready, authenticated, login, logout } = useSonarAuth();
   const {
     loading: entitiesLoading,
@@ -210,7 +219,7 @@ export function useSonarPublicSaleAccess(walletAddress, selectedEntityId) {
     (selectedEntityId &&
       entities?.find((entity) => entity.EntityID === selectedEntityId)) ||
     primaryEntity;
-  const status = authenticated ? describeSonarEntity(activeEntity) : null;
+  const status = authenticated ? describeSonarEntity(activeEntity, phase) : null;
 
   const connectSonar = () => {
     // Pathname only — never store leftover ?code=&state= or we can loop
