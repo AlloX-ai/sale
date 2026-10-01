@@ -1987,7 +1987,7 @@ export function PublicSaleSonarPage() {
                                 ${commitData?.raisedUsd.toLocaleString()} raised
                               </span>
                               <span className="text-[10px] text-gray-500">
-                                Round target: $2.00M
+                                Round target: $1.00M
                               </span>
                             </div>
                           </div>
