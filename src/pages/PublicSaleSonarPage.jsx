@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Copy,
@@ -804,6 +805,36 @@ export function PublicSaleSonarPage() {
   const [wlAmount, setWlAmount] = useState("");
   const [email, setEmail] = useState("");
   const [selectedEntity, setSelectedEntity] = useState(null);
+  // Entity dropdown in the Sonar header pill. The menu is portaled with fixed
+  // positioning because the sale banner clips overflow.
+  const [entityMenuPos, setEntityMenuPos] = useState(null);
+  const entityTriggerRef = useRef(null);
+  const entityMenuOpen = entityMenuPos !== null;
+  const toggleEntityMenu = () => {
+    if (entityMenuOpen) {
+      setEntityMenuPos(null);
+      return;
+    }
+    const rect = entityTriggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setEntityMenuPos({
+      top: rect.bottom + 8,
+      right: window.innerWidth - rect.right,
+    });
+  };
+  useEffect(() => {
+    if (!entityMenuOpen) return;
+    const close = () => setEntityMenuPos(null);
+    const onKey = (e) => e.key === "Escape" && close();
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [entityMenuOpen]);
   const [successCountdown, setSuccessCountdown] = useState(5);
   const [liveAmount, setLiveAmount] = useState("");
   const [liveSaleKind, setLiveSaleKind] = useState("public");
@@ -1492,19 +1523,141 @@ export function PublicSaleSonarPage() {
                                 style={{ filter: "invert(1) brightness(1.4)" }}
                               />
                               <span className="h-3.5 w-px bg-gray-300" />
-                              <span className="inline-flex items-center gap-1 pl-0.5 text-[11px] font-semibold text-gray-800">
-                                <Shield className="h-3.5 w-3.5 text-emerald-600" />
-                                {sonar.primaryEntity?.Label || "Connected"}
-                              </span>
+                              {sonar.entities && sonar.entities.length > 0 ? (() => {
+                                const currentEntityId = selectedEntity?.EntityID ?? sonar.primaryEntity?.EntityID;
+                                const currentEntity =
+                                  sonar.entities.find((ent) => ent.EntityID === currentEntityId) ?? sonar.entities[0];
+                                const canSwitch = sonar.entities.length > 1;
+                                return (
+                                  <>
+                                    {/* span, not button: the banner itself is a <button> */}
+                                    <span
+                                      ref={entityTriggerRef}
+                                      role="button"
+                                      tabIndex={canSwitch ? 0 : -1}
+                                      aria-haspopup="listbox"
+                                      aria-expanded={entityMenuOpen}
+                                      aria-disabled={!canSwitch}
+                                      title={canSwitch ? "Select entity" : "Entity"}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (canSwitch) toggleEntityMenu();
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (canSwitch && (e.key === "Enter" || e.key === " ")) {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          toggleEntityMenu();
+                                        }
+                                      }}
+                                      className={`inline-flex items-center gap-1.5 rounded-full bg-emerald-50 py-1 pl-2 pr-1 ring-1 ring-emerald-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                                        canSwitch ? "cursor-pointer hover:bg-emerald-100" : "cursor-default"
+                                      }`}
+                                    >
+                                      <Shield className="h-3.5 w-3.5 text-emerald-600" />
+                                      <span className="max-w-[140px] truncate text-[11px] font-semibold text-emerald-900">
+                                        {currentEntity?.Label || "Unnamed Entity"}
+                                      </span>
+                                      <span
+                                        className={`inline-flex items-center justify-center rounded-full p-0.5 ${
+                                          canSwitch ? "bg-emerald-600" : "bg-emerald-300"
+                                        }`}
+                                      >
+                                        <ChevronDown
+                                          className={`h-3 w-3 text-white transition-transform ${entityMenuOpen ? "rotate-180" : ""}`}
+                                          strokeWidth={3}
+                                        />
+                                      </span>
+                                    </span>
+
+                                    {entityMenuOpen &&
+                                      createPortal(
+                                        <>
+                                          <div
+                                            className="fixed inset-0 z-[60]"
+                                            onClick={() => setEntityMenuPos(null)}
+                                          />
+                                          <div
+                                            role="listbox"
+                                            className="fixed z-[61] min-w-[180px] max-w-[260px] rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg animate-fade-in"
+                                            style={{ top: entityMenuPos.top, right: entityMenuPos.right }}
+                                          >
+                                            <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                              Entity
+                                            </p>
+                                            {sonar.entities.map((entity) => {
+                                              const isSelected = entity.EntityID === currentEntity?.EntityID;
+                                              const label = entity.Label || "Unnamed Entity";
+                                              return (
+                                                <button
+                                                  key={entity.EntityID}
+                                                  type="button"
+                                                  role="option"
+                                                  aria-selected={isSelected}
+                                                  onClick={() => {
+                                                    setSelectedEntity(entity);
+                                                    setEntityMenuPos(null);
+                                                  }}
+                                                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors ${
+                                                    isSelected
+                                                      ? "bg-black font-medium text-white hover:bg-gray-800"
+                                                      : "text-gray-800 hover:bg-black/5"
+                                                  }`}
+                                                >
+                                                  <span
+                                                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                                                      isSelected ? "bg-white text-black" : "bg-emerald-100 text-emerald-700"
+                                                    }`}
+                                                  >
+                                                    {label.charAt(0).toUpperCase()}
+                                                  </span>
+                                                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                                                  {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                                                </button>
+                                              );
+                                            })}
+                                            <div className="my-1.5 w-full border-t border-gray-200/50" />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setEntityMenuPos(null);
+                                                sonar.logout();
+                                              }}
+                                              className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-medium text-[#F54900] transition-colors hover:bg-orange-100"
+                                            >
+                                              <LogOut className="h-3.5 w-3.5" />
+                                              Disconnect Sonar
+                                            </button>
+                                          </div>
+                                        </>,
+                                        document.body,
+                                      )}
+                                  </>
+                                );
+                              })() : (
+                                <span className="inline-flex items-center gap-1 pl-0.5 text-[11px] font-semibold text-gray-800">
+                                  <Shield className="h-3.5 w-3.5 text-emerald-600" />
+                                  {sonar.primaryEntity?.Label || "Connected"}
+                                </span>
+                              )}
                               <span
+                                role="button"
+                                tabIndex={0}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   sonar.logout();
                                 }}
-                                className="ml-0.5 inline-flex items-center justify-center rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    sonar.logout();
+                                  }
+                                }}
+                                className="inline-flex items-center justify-center rounded-full bg-red-50 p-1.5 text-red-600 ring-1 ring-red-200 hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
                                 title="Disconnect Sonar"
                               >
-                                <LogOut className="h-5 w-5" />
+                                <LogOut className="h-4 w-4" strokeWidth={2.5} />
                               </span>
                             </div>
                           ) : sonar?.configured ? (
@@ -2287,38 +2440,6 @@ export function PublicSaleSonarPage() {
                                   )}
                                 </AnimatePresence>
                               </div>
-
-                              {sonar.authenticated && sonar.entities && sonar.entities.length > 0 && (
-                                <div>
-                                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                                    <Users className="w-3 h-3" />
-                                    Entity
-                                    {sonar.entities.length > 1 && (
-                                      <span className="font-normal text-gray-400 normal-case">
-                                        Select one
-                                      </span>
-                                    )}
-                                  </label>
-                                  <div className="relative mb-4">
-                                    <select
-                                      value={selectedEntity ? selectedEntity.EntityID : (sonar.primaryEntity?.EntityID ?? "")}
-                                      onChange={(e) => {
-                                        const entity = sonar.entities?.find((ent) => ent.EntityID === e.target.value);
-                                        setSelectedEntity(entity || null);
-                                      }}
-                                      disabled={!saleOpen || sonar.entities.length === 1}
-                                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-sm bg-white/80 transition-colors disabled:opacity-50 appearance-none cursor-pointer"
-                                    >
-                                      {sonar.entities?.map((entity) => (
-                                        <option key={entity.EntityID} value={entity.EntityID}>
-                                          {entity.Label || "Unnamed Entity"}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-                                  </div>
-                                </div>
-                              )}
 
                               <div>
                                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5 mb-2">
