@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ExternalLink,
   Loader2,
@@ -421,9 +422,11 @@ const TOAST_TONE_STYLES = {
   },
 };
 
+// Portaled to <body>: a parent with backdrop-filter/transform (e.g. glass-card)
+// would otherwise become the containing block for `fixed` and trap the toast.
 function SonarToastShell({ tone, onDismiss, children }) {
   const styles = TOAST_TONE_STYLES[tone] || TOAST_TONE_STYLES.amber;
-  return (
+  return createPortal(
     <div className="fixed bottom-4 right-4 z-[100] w-[calc(100vw-2rem)] max-w-sm animate-fade-in">
       <div
         className={`relative rounded-2xl border shadow-lg p-4 pr-8 flex items-start gap-3 ${styles.box}`}
@@ -438,7 +441,8 @@ function SonarToastShell({ tone, onDismiss, children }) {
           <X className="w-4 h-4" />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
