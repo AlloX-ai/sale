@@ -55,6 +55,7 @@ import { toast } from "../utils/toast";
 import Countdown from "react-countdown";
 import { usePublicSaleWhitelist } from "../hooks/usePublicSaleWhitelist";
 import { usePrivateSale } from "../hooks/usePrivateSale";
+import { useSonarPublicSalePurchase } from "../hooks/useSonarPublicSalePurchase";
 import { useAuth } from "../hooks/useAuth";
 import {
   CHAIN_EXPLORERS,
@@ -606,57 +607,6 @@ const MOCK_REFERRALS = [
   { id: "0x6b4c…0012", invested: 8000, reward: 240, date: "Jul 23" },
   { id: "0xf77a…cc2d", invested: 200, reward: 6, date: "Jul 22" },
   { id: "0x0e3b…9a4f", invested: 25000, reward: 750, date: "Jul 21" },
-];
-
-const MOCK_LIVE_INVESTMENTS = [
-  {
-    id: "inv-1",
-    date: "Aug 12, 2026",
-    amount: 2500,
-    token: "USDC",
-    network: "Ethereum",
-    txHash: "0x7a3f9c2e1b8d4a6f0e5c9b7d2a1f4e8c3b6d9a0e5f2c8b1d4a7e0c3f6b9d2a5",
-  },
-  {
-    id: "inv-2",
-    date: "Aug 11, 2026",
-    amount: 1000,
-    token: "USDT",
-    network: "Ethereum",
-    txHash: "0x1c8e4b7a2d5f0e9c6b3a8d1f4e7c0b5a2d9f6e3c8b1a4d7e0f5c2b9a6d3e8f1",
-  },
-  {
-    id: "inv-3",
-    date: "Aug 10, 2026",
-    amount: 500,
-    token: "USDC",
-    network: "Ethereum",
-    txHash: "0x9d2a5f8c1e4b7a0d3f6c9e2b5a8d1f4e7c0b3a6d9f2e5c8b1a4d7e0f3c6b9a2",
-  },
-  {
-    id: "inv-4",
-    date: "Aug 10, 2026",
-    amount: 500,
-    token: "USDC",
-    network: "Ethereum",
-    txHash: "0x9d2a5f8c1e4b7a0d3f6c9e2b5a8d1f4e7c0b3a6d9f2e5c8b1a4d7e0f3c6b9a2",
-  },
-  {
-    id: "inv-5",
-    date: "Aug 10, 2026",
-    amount: 500,
-    token: "USDC",
-    network: "Ethereum",
-    txHash: "0x9d2a5f8c1e4b7a0d3f6c9e2b5a8d1f4e7c0b3a6d9f2e5c8b1a4d7e0f3c6b9a2",
-  },
-  {
-    id: "inv-6",
-    date: "Aug 10, 2026",
-    amount: 500,
-    token: "USDC",
-    network: "Ethereum",
-    txHash: "0x9d2a5f8c1e4b7a0d3f6c9e2b5a8d1f4e7c0b3a6d9f2e5c8b1a4d7e0f3c6b9a2",
-  },
 ];
 
 const TX_EXPLORERS = {
@@ -1262,29 +1212,79 @@ export function PublicSaleSonarPage() {
   const publicLiveSonarReady =
     !sonar.configured ||
     (sonar.authenticated && sonarEligible && !sonarHasError);
-  const liveCanSubmit = isPrivateSale
-    ? privateSale.canSubmit
-    : isConnected &&
-      isOnSaleChain &&
-      publicLiveSonarReady &&
-      liveNum >= liveMinUsd &&
-      liveNum <= liveMaxUsd;
+
+  // Sonar purchase flow for the public live sale (Ethereum SettlementSale).
+  const publicPurchase = useSonarPublicSalePurchase({
+    entity: sonar.activeEntity,
+    walletAddress,
+    enabled:
+      liveSaleKind === "public" &&
+      saleState === "live" &&
+      isConnected &&
+      !isSolanaWallet,
+    currentChainId: currentEvmChainId,
+    switchToSaleChain,
+  });
+  const publicSaleBlocked =
+    !isPrivateSale &&
+    (publicPurchase.saleInfo?.paused ||
+      publicPurchase.saleInfo?.saleUUIDMatches === false);
+
   const privateRoundFdvM = isPrivateSale
     ? privateSale.plans[0]?.fdv
       ? Math.round(privateSale.plans[0].fdv / 1_000_000)
       : null
     : 65;
-  const liveAssetBalanceUsd = balanceBreakdown
-    .filter(
-      (row) =>
-        String(row?.symbol || "").toUpperCase() ===
-        String(liveAsset).toUpperCase(),
-    )
-    .reduce((sum, row) => sum + (Number(row?.balanceUsd) || 0), 0);
+  // Prefer the on-chain token balance read for the purchase flow; fall back to
+  // the whitelist API breakdown while it loads.
+  const onChainLiveBalance = publicPurchase.tokenBalance(liveAsset);
+  const liveAssetBalanceUsd =
+    onChainLiveBalance ??
+    balanceBreakdown
+      .filter(
+        (row) =>
+          String(row?.symbol || "").toUpperCase() ===
+          String(liveAsset).toUpperCase(),
+      )
+      .reduce((sum, row) => sum + (Number(row?.balanceUsd) || 0), 0);
   const liveAssetBalanceKnown =
     isConnected &&
-    !wlStatusLoading &&
-    Array.isArray(wlStatus?.balanceBreakdown);
+    (onChainLiveBalance != null ||
+      (!wlStatusLoading && Array.isArray(wlStatus?.balanceBreakdown)));
+  const liveInsufficientBalance =
+    !isPrivateSale && liveAssetBalanceKnown && liveNum > liveAssetBalanceUsd;
+  const liveCanSubmit = isPrivateSale
+    ? privateSale.canSubmit
+    : isConnected &&
+      isOnSaleChain &&
+      publicLiveSonarReady &&
+      !publicSaleBlocked &&
+      !publicPurchase.busy &&
+      !liveInsufficientBalance &&
+      liveNum >= liveMinUsd &&
+      liveNum <= liveMaxUsd;
+  const publicInvestments = publicPurchase.committedByToken
+    .filter((row) => row.amount > 0)
+    .map((row) => ({
+      id: `commit-${row.symbol}`,
+      date: "Committed",
+      amount: row.amount,
+      token: row.symbol,
+      network: PUBLIC_SALE_CHAIN_NAME,
+      txHash:
+        publicPurchase.lastTxHash &&
+        row.symbol.toUpperCase() === liveAsset.toUpperCase()
+          ? publicPurchase.lastTxHash
+          : null,
+    }));
+  const PURCHASE_STEP_LABELS = {
+    checking: "Checking eligibility with Sonar…",
+    permit: "Getting purchase permit…",
+    switching: `Switching to ${PUBLIC_SALE_CHAIN_NAME}…`,
+    approving: `Approve ${liveAsset} in your wallet…`,
+    committing: "Confirm the commitment in your wallet…",
+    confirming: "Confirming on-chain…",
+  };
   const liveMaxAmount = liveAssetBalanceKnown
     ? Math.max(0, Math.min(Math.floor(liveAssetBalanceUsd), liveMaxUsd))
     : 0;
@@ -1393,7 +1393,7 @@ export function PublicSaleSonarPage() {
           </div>
         </div> */}
 
-        {/* {liveSaleKind === "public" && (
+        {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
          
             <div className="flex p-1 bg-white/60 backdrop-blur-xl border border-white/60 rounded-xl shadow-sm mt-4 md:mt-0">
@@ -1408,7 +1408,7 @@ export function PublicSaleSonarPage() {
               ))}
             </div>
           </div>
-        )} */}
+        )}
         <AnimatePresence mode="wait">
           {/* ══ LIVE TAB ══ */}
           {/* {saleState === "live" && ( */}
@@ -3408,6 +3408,191 @@ export function PublicSaleSonarPage() {
                             </div>
                           )}
 
+                        {/* Public sale: Sonar purchase flow status */}
+                        {!isPrivateSale && isConnected && (
+                          <div className="flex flex-col gap-2">
+                            {publicPurchase.committedTotal > 0 && (
+                              <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs">
+                                <span className="text-gray-500">
+                                  Your current commitment
+                                </span>
+                                <span className="font-bold text-gray-900 tabular-nums">
+                                  $
+                                  {publicPurchase.committedTotal.toLocaleString(
+                                    undefined,
+                                    { maximumFractionDigits: 2 },
+                                  )}
+                                  {liveNum > 0 && (
+                                    <span className="font-medium text-gray-500">
+                                      {" "}
+                                      → $
+                                      {(
+                                        publicPurchase.committedTotal + liveNum
+                                      ).toLocaleString(undefined, {
+                                        maximumFractionDigits: 2,
+                                      })}{" "}
+                                      after this
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            )}
+
+                            {publicPurchase.saleInfoError && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-red-700">
+                                  {publicPurchase.saleInfoError}
+                                </p>
+                              </div>
+                            )}
+
+                            {publicPurchase.saleInfo?.saleUUIDMatches ===
+                              false && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-red-700">
+                                  The sale contract doesn't match this Sonar
+                                  sale. Commitments are disabled until this is
+                                  fixed.
+                                </p>
+                              </div>
+                            )}
+
+                            {publicPurchase.saleInfo?.paused && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                                <Clock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-gray-700">
+                                  The sale is paused. Commitments will reopen
+                                  when it resumes.
+                                </p>
+                              </div>
+                            )}
+
+                            {publicPurchase.failure && (
+                              <div
+                                className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border ${
+                                  publicPurchase.failure.tone === "red"
+                                    ? "bg-red-50 border-red-200"
+                                    : publicPurchase.failure.tone === "amber"
+                                      ? "bg-amber-50 border-amber-200"
+                                      : "bg-gray-50 border-gray-200"
+                                }`}
+                              >
+                                <AlertCircle
+                                  className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                    publicPurchase.failure.tone === "red"
+                                      ? "text-red-500"
+                                      : publicPurchase.failure.tone === "amber"
+                                        ? "text-amber-600"
+                                        : "text-gray-500"
+                                  }`}
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-gray-900">
+                                    {publicPurchase.failure.title}
+                                  </p>
+                                  <p className="text-xs text-gray-700 mt-0.5">
+                                    {publicPurchase.failure.detail}
+                                  </p>
+                                  <div className="flex flex-wrap gap-3 mt-1.5">
+                                    {publicPurchase.failure.action ===
+                                      "liveness" &&
+                                      publicPurchase.failure
+                                        .livenessCheckURL && (
+                                        <a
+                                          href={
+                                            publicPurchase.failure
+                                              .livenessCheckURL
+                                          }
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                        >
+                                          Start liveness check
+                                          <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                      )}
+                                    {publicPurchase.failure.action ===
+                                      "sonar" && (
+                                      <a
+                                        href={publicPurchase.sonarHomeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                      >
+                                        Open Sonar
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    )}
+                                    {publicPurchase.failure.action ===
+                                      "switchWallet" && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          dispatch(setWalletModal(true))
+                                        }
+                                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                      >
+                                        Connect a different wallet
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={publicPurchase.clearResult}
+                                      className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                                    >
+                                      Dismiss
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {publicPurchase.error && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-red-700 break-words min-w-0">
+                                  {publicPurchase.error}
+                                </p>
+                              </div>
+                            )}
+
+                            {publicPurchase.busy && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+                                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-700">
+                                  {PURCHASE_STEP_LABELS[publicPurchase.step]}
+                                  {publicPurchase.step === "approving" &&
+                                    " This lets the sale contract take the amount you're committing."}
+                                </p>
+                              </div>
+                            )}
+
+                            {publicPurchase.step === "success" && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-emerald-800">
+                                    Commitment confirmed
+                                  </p>
+                                  {publicPurchase.lastTxHash && (
+                                    <a
+                                      href={`${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-0.5"
+                                    >
+                                      View on Etherscan
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* CTA */}
                         <button
                           type="button"
@@ -3441,6 +3626,15 @@ export function PublicSaleSonarPage() {
                                 switchToSaleChain();
                                 return;
                               }
+                              if (!liveCanSubmit) return;
+                              publicPurchase
+                                .commit({
+                                  amountUsd: liveAmount,
+                                  tokenSymbol: liveAsset,
+                                })
+                                .then((ok) => {
+                                  if (ok) setLiveAmount("");
+                                });
                               return;
                             }
                             if (!isConnected) {
@@ -3470,6 +3664,9 @@ export function PublicSaleSonarPage() {
                         >
                           {isPrivateSale && privateSale.contributing
                             ? "Processing…"
+                            : !isPrivateSale && publicPurchase.busy
+                              ? PURCHASE_STEP_LABELS[publicPurchase.step] ||
+                                "Processing…"
                             : isPrivateSale && !isConnected
                               ? "Connect Wallet"
                               : isPrivateSale && !isAuthenticated
@@ -3482,6 +3679,13 @@ export function PublicSaleSonarPage() {
                                       ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
                                       : !isPrivateSale && sonarBlockedLabel
                                         ? sonarBlockedLabel
+                                        : !isPrivateSale &&
+                                            publicPurchase.saleInfo?.paused
+                                          ? "Sale paused"
+                                        : !isPrivateSale &&
+                                            liveNum > 0 &&
+                                            liveInsufficientBalance
+                                          ? `Insufficient ${liveAsset} balance`
                                         : isPrivateSale &&
                                             privateSale.eligibilityLoading
                                           ? "Checking eligibility…"
@@ -3557,21 +3761,21 @@ export function PublicSaleSonarPage() {
                                       {
                                         (isPrivateSale
                                           ? privatePositionContributions
-                                          : MOCK_LIVE_INVESTMENTS
+                                          : publicInvestments
                                         ).length
                                       }{" "}
-                                      tx
+                                      {isPrivateSale ? "tx" : "tokens"}
                                     </span>
                                   </div>
 
                                   {(isPrivateSale
                                     ? privatePositionContributions
-                                    : MOCK_LIVE_INVESTMENTS
+                                    : publicInvestments
                                   ).length > 0 ? (
                                     <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
                                       {(isPrivateSale
                                         ? privatePositionContributions
-                                        : MOCK_LIVE_INVESTMENTS
+                                        : publicInvestments
                                       ).map((inv, idx) => {
                                         const chainKey = isPrivateSale
                                           ? String(
