@@ -4,21 +4,30 @@ const WHITELIST_ENDPOINT = "/public-sale/whitelist";
 const WHITELIST_CHAIN_QUERY = `${WHITELIST_ENDPOINT}`;
 const WHITELIST_SONAR_CHAIN_QUERY = `${WHITELIST_ENDPOINT}/sonar`;
 
-/** EVM chain id for the Sonar public sale (Base mainnet). */
-export const PUBLIC_SALE_CHAIN_ID = 8453;
+/** EVM chain id for the Sonar public sale (Ethereum mainnet). */
+export const PUBLIC_SALE_CHAIN_ID = 1;
+export const PUBLIC_SALE_CHAIN_NAME = "Ethereum";
+export const PUBLIC_SALE_CHAIN_LOGO =
+  "https://cdn.allox.ai/allox/networks/eth.svg";
 
-export function isPublicSaleBaseChainRow(row) {
+const PUBLIC_SALE_CHAIN_ALIASES = new Set([
+  "ethereum",
+  "eth",
+  "mainnet",
+  "1",
+  "0x1",
+]);
+
+export function isPublicSaleChainRow(row) {
   const chain = String(row?.chain ?? "")
     .trim()
     .toLowerCase();
-  if (chain === "base") return true;
-  if (chain === "8453" || chain === "0x2105") return true;
-  return false;
+  return PUBLIC_SALE_CHAIN_ALIASES.has(chain);
 }
 
-export function pickBaseBalanceBreakdown(breakdown) {
+export function pickSaleChainBalanceBreakdown(breakdown) {
   if (!Array.isArray(breakdown)) return [];
-  return breakdown.filter(isPublicSaleBaseChainRow);
+  return breakdown.filter(isPublicSaleChainRow);
 }
 
 export function sumBalanceBreakdownUsd(breakdown) {
@@ -28,16 +37,18 @@ export function sumBalanceBreakdownUsd(breakdown) {
   );
 }
 
-/** Restrict whitelist balance fields to Base (sale network). */
+/** Restrict whitelist balance fields to Ethereum (sale network). */
 export function normalizePublicSaleWhitelistStatus(data) {
   if (!data || typeof data !== "object") return data;
-  const baseBreakdown = pickBaseBalanceBreakdown(data.balanceBreakdown);
+  const saleChainBreakdown = pickSaleChainBalanceBreakdown(
+    data.balanceBreakdown,
+  );
   const hasBreakdown = Array.isArray(data.balanceBreakdown);
   return {
     ...data,
-    balanceBreakdown: baseBreakdown,
+    balanceBreakdown: saleChainBreakdown,
     walletBalanceUsd: hasBreakdown
-      ? sumBalanceBreakdownUsd(baseBreakdown)
+      ? sumBalanceBreakdownUsd(saleChainBreakdown)
       : data.walletBalanceUsd,
   };
 }

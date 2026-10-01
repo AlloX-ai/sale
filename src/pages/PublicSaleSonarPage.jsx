@@ -46,7 +46,11 @@ import { Link } from "react-router";
 import { useDispatch, useSelector } from "react-redux";
 import { setWalletModal, setChainId } from "../redux/slices/walletSlice";
 import { useConnection, useSwitchChain } from "wagmi";
-import { PUBLIC_SALE_CHAIN_ID } from "../utils/publicSaleApi";
+import {
+  PUBLIC_SALE_CHAIN_ID,
+  PUBLIC_SALE_CHAIN_NAME,
+  PUBLIC_SALE_CHAIN_LOGO,
+} from "../utils/publicSaleApi";
 import { toast } from "../utils/toast";
 import Countdown from "react-countdown";
 import { usePublicSaleWhitelist } from "../hooks/usePublicSaleWhitelist";
@@ -62,10 +66,10 @@ import { AlloxSaleTermsModal } from "../components/AlloxSaleTermsModal";
 import {
   SonarStatusToast,
   SonarNotConfiguredNotice,
+  describeSonarEntity,
   useSonarPublicSaleAccess,
 } from "../components/SonarPublicSaleGate";
 import { getSonarHomeUrl } from "../config/sonar";
-import { EntitySetupState } from "@echoxyz/sonar-core";
 import esmaLogo from "../assets/ESMALogo.png";
 
 const renderer = ({ days, hours, minutes, seconds }) => {
@@ -379,7 +383,7 @@ const SALE_KIND_META = {
     status: "Live Now",
     statusTone: "live",
     fdv: "$65M",
-    lines: ["Open to KYC'd persons from eligible jurisdictions via Sonar's onchain token sale infrastructure."],
+    lines: ["Open to KYC'd users from eligible jurisdictions."],
     extras: [
       {
         title: "Public Round",
@@ -387,7 +391,7 @@ const SALE_KIND_META = {
       },
       {
         title: "Network",
-        value: "Base • USDC • USDT",
+        value: "Ethereum • USDC • USDT",
       },
     ],
     mica: true,
@@ -610,7 +614,7 @@ const MOCK_LIVE_INVESTMENTS = [
     date: "Aug 12, 2026",
     amount: 2500,
     token: "USDC",
-    network: "Base",
+    network: "Ethereum",
     txHash: "0x7a3f9c2e1b8d4a6f0e5c9b7d2a1f4e8c3b6d9a0e5f2c8b1d4a7e0c3f6b9d2a5",
   },
   {
@@ -618,7 +622,7 @@ const MOCK_LIVE_INVESTMENTS = [
     date: "Aug 11, 2026",
     amount: 1000,
     token: "USDT",
-    network: "Base",
+    network: "Ethereum",
     txHash: "0x1c8e4b7a2d5f0e9c6b3a8d1f4e7c0b5a2d9f6e3c8b1a4d7e0f5c2b9a6d3e8f1",
   },
   {
@@ -935,10 +939,11 @@ export function PublicSaleSonarPage() {
   const switchChain = useSwitchChain();
   const isSolanaWallet = walletType === "solana";
   const currentEvmChainId = isSolanaWallet ? null : (wagmiChainId ?? chainId);
-  const isOnBaseChain = currentEvmChainId === PUBLIC_SALE_CHAIN_ID;
-  const needsBaseSwitch = isConnected && !isSolanaWallet && !isOnBaseChain;
+  const isOnSaleChain = currentEvmChainId === PUBLIC_SALE_CHAIN_ID;
+  const needsSaleChainSwitch =
+    isConnected && !isSolanaWallet && !isOnSaleChain;
 
-  const switchToBase = async () => {
+  const switchToSaleChain = async () => {
     if (!switchChain.mutateAsync) {
       toast.error(
         "Unable to switch chain. Reconnect your wallet and try again.",
@@ -949,9 +954,9 @@ export function PublicSaleSonarPage() {
       await switchChain.mutateAsync({ chainId: PUBLIC_SALE_CHAIN_ID });
       dispatch(setChainId(PUBLIC_SALE_CHAIN_ID));
     } catch (err) {
-      console.error("Switch to Base:", err);
+      console.error(`Switch to ${PUBLIC_SALE_CHAIN_NAME}:`, err);
       toast.error(
-        "Failed to switch to Base. Confirm the network switch in your wallet.",
+        `Failed to switch to ${PUBLIC_SALE_CHAIN_NAME}. Confirm the network switch in your wallet.`,
       );
     }
   };
@@ -967,7 +972,10 @@ export function PublicSaleSonarPage() {
 
   const privateSale = usePrivateSale({ enabled: liveSaleKind === "private" });
   const { isAuthenticated, ensureAuthenticated } = useAuth();
-  const sonar = useSonarPublicSaleAccess(walletAddress);
+  const sonar = useSonarPublicSaleAccess(
+    walletAddress,
+    selectedEntity?.EntityID,
+  );
 
   const needsSonarConnect =
     liveSaleKind === "public" &&
@@ -1034,22 +1042,29 @@ export function PublicSaleSonarPage() {
     walletBalanceUsd != null && wlNum > walletBalanceUsd;
   const belowMin = wlAmount !== "" && wlNum < minUsd;
   const aboveMax = wlNum > maxUsd;
-  // Whitelist requires a Sonar login and a started KYC (in progress, in
-  // review or complete) — not necessarily a finished one.
-  const sonarEntityState = sonar.primaryEntity?.EntitySetupState;
-  const sonarKycStarted =
-    Boolean(sonarEntityState) &&
-    sonarEntityState !== EntitySetupState.NOT_STARTED &&
-    sonarEntityState !== EntitySetupState.FAILURE_FINAL;
+  // Whitelist and purchase require the selected Sonar entity to have
+  // completed KYC and be eligible for this sale.
+  const sonarEligible = Boolean(sonar.status?.eligible);
   const sonarWhitelistReady =
     !sonar.configured ||
-    (sonar.authenticated && !sonar.entitiesLoading && sonarKycStarted);
+    (sonar.authenticated && !sonar.entitiesLoading && sonarEligible);
+  // Short reason shown on blocked CTAs when Sonar is connected but the
+  // entity can't participate yet.
+  const sonarBlockedLabel =
+    sonar.configured &&
+    sonar.authenticated &&
+    !sonar.entitiesLoading &&
+    !sonarEligible
+      ? sonar.entitiesError
+        ? "Sonar status unavailable"
+        : sonar.status?.buttonLabel || "Not eligible to join"
+      : null;
   const wlValid =
     saleOpen &&
     !wlSubmitting &&
     sonarWhitelistReady &&
     isConnected &&
-    isOnBaseChain &&
+    isOnSaleChain &&
     wlNum >= minUsd &&
     !aboveMax &&
     !insufficientBalance;
@@ -1069,7 +1084,7 @@ export function PublicSaleSonarPage() {
   // Sonar entity to attach to the whitelist registration (null until the
   // user connects Sonar and their entity loads).
   const sonarEntityId = sonar.authenticated
-    ? (selectedEntity?.EntityID ?? sonar.primaryEntity?.EntityID ?? null)
+    ? (sonar.activeEntity?.EntityID ?? null)
     : null;
 
   // Registered before connecting Sonar (or before this field existed): link
@@ -1096,8 +1111,8 @@ export function PublicSaleSonarPage() {
   ]);
 
   const handleJoin = async () => {
-    if (needsBaseSwitch) {
-      await switchToBase();
+    if (needsSaleChainSwitch) {
+      await switchToSaleChain();
       return;
     }
     if (sonar.configured && !sonar.authenticated) {
@@ -1242,11 +1257,11 @@ export function PublicSaleSonarPage() {
   const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
   const publicLiveSonarReady =
     !sonar.configured ||
-    (sonar.authenticated && sonarKycStarted && !sonarHasError);
+    (sonar.authenticated && sonarEligible && !sonarHasError);
   const liveCanSubmit = isPrivateSale
     ? privateSale.canSubmit
     : isConnected &&
-      isOnBaseChain &&
+      isOnSaleChain &&
       publicLiveSonarReady &&
       liveNum >= liveMinUsd &&
       liveNum <= liveMaxUsd;
@@ -1315,8 +1330,9 @@ export function PublicSaleSonarPage() {
     });
 
   const sonarKycRegistered = Boolean(sonar.authenticated);
-  const sonarKycVerified =
-    sonar.primaryEntity?.EntitySetupState === EntitySetupState.COMPLETE;
+  // "Verified" means KYC complete AND eligible for this sale — a completed
+  // but ineligible entity must not show a green tick.
+  const sonarKycVerified = sonarEligible;
   const sonarKycFundsCommitted = isRegistered;
 
   const sonarKycSteps = [
@@ -1329,19 +1345,30 @@ export function PublicSaleSonarPage() {
       title: "Verify your identity",
       body: "Complete KYC now, during pre-registration. Don't wait for the window. Your documents go to Sonar, never to AlloX.",
       done: sonarKycVerified,
+      // Current Sonar state under the step, so "not done" is never ambiguous
+      // (in review vs rejected vs not eligible).
+      note:
+        sonarKycRegistered &&
+        !sonar.entitiesLoading &&
+        !sonarKycVerified &&
+        sonar.status
+          ? { text: sonar.status.title, tone: sonar.status.tone }
+          : null,
     },
     {
       title: "Commit funds",
       body: saleOpen
-        ? "Reserve your allocation below. Only verified accounts can commit. Sale Network: Base • USDC • USDT"
+        ? "Reserve your allocation below. Only verified accounts can commit. Sale Network: Ethereum • USDC • USDT"
         : "Only verified accounts can commit once registration opens.",
       done: sonarKycFundsCommitted && sonarKycVerified,
     },
   ];
 
+  // Only offer "continue on Sonar" when the user can actually act there —
+  // not while under review or after a final ineligibility decision.
   const sonarKycNextAction = !sonarKycRegistered
     ? "connect"
-    : !sonarKycVerified
+    : !sonar.entitiesLoading && !sonarKycVerified && sonar.status?.needsSetup
       ? "verify"
       : null;
 
@@ -1524,10 +1551,15 @@ export function PublicSaleSonarPage() {
                               />
                               <span className="h-3.5 w-px bg-gray-300" />
                               {sonar.entities && sonar.entities.length > 0 ? (() => {
-                                const currentEntityId = selectedEntity?.EntityID ?? sonar.primaryEntity?.EntityID;
-                                const currentEntity =
-                                  sonar.entities.find((ent) => ent.EntityID === currentEntityId) ?? sonar.entities[0];
+                                const currentEntity = sonar.activeEntity ?? sonar.entities[0];
                                 const canSwitch = sonar.entities.length > 1;
+                                const shieldColor = sonar.entitiesLoading
+                                  ? "text-gray-400"
+                                  : sonar.status?.eligible
+                                    ? "text-emerald-600"
+                                    : sonar.status?.tone === "red"
+                                      ? "text-red-600"
+                                      : "text-amber-500";
                                 return (
                                   <>
                                     {/* span, not button: the banner itself is a <button> */}
@@ -1554,7 +1586,7 @@ export function PublicSaleSonarPage() {
                                         canSwitch ? "cursor-pointer hover:bg-emerald-100" : "cursor-default"
                                       }`}
                                     >
-                                      <Shield className="h-3.5 w-3.5 text-emerald-600" />
+                                      <Shield className={`h-3.5 w-3.5 ${shieldColor}`} />
                                       <span className="max-w-[140px] truncate text-[11px] font-semibold text-emerald-900">
                                         {currentEntity?.Label || "Unnamed Entity"}
                                       </span>
@@ -1588,6 +1620,7 @@ export function PublicSaleSonarPage() {
                                             {sonar.entities.map((entity) => {
                                               const isSelected = entity.EntityID === currentEntity?.EntityID;
                                               const label = entity.Label || "Unnamed Entity";
+                                              const entityStatus = describeSonarEntity(entity);
                                               return (
                                                 <button
                                                   key={entity.EntityID}
@@ -1611,7 +1644,22 @@ export function PublicSaleSonarPage() {
                                                   >
                                                     {label.charAt(0).toUpperCase()}
                                                   </span>
-                                                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                                                  <span className="min-w-0 flex-1">
+                                                    <span className="block truncate">{label}</span>
+                                                    <span
+                                                      className={`block truncate text-[10px] font-medium ${
+                                                        isSelected
+                                                          ? "text-white/70"
+                                                          : entityStatus.eligible
+                                                            ? "text-emerald-600"
+                                                            : entityStatus.tone === "red"
+                                                              ? "text-red-600"
+                                                              : "text-amber-600"
+                                                      }`}
+                                                    >
+                                                      {entityStatus.eligible ? "Eligible" : entityStatus.title}
+                                                    </span>
+                                                  </span>
                                                   {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
                                                 </button>
                                               );
@@ -2060,17 +2108,6 @@ export function PublicSaleSonarPage() {
                           {/* {isConnected && !sonar.configured && (
                             <SonarNotConfiguredNotice />
                           )} */}
-                          {isConnected &&
-                            sonar.configured &&
-                            sonar.authenticated && (
-                              <SonarStatusToast
-                                status={sonar.status}
-                                entity={sonar.primaryEntity}
-                                onDisconnect={sonar.logout}
-                                loading={sonar.entitiesLoading}
-                                error={sonar.entitiesError}
-                              />
-                            )}
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                             {/* Left — context & rules */}
                             <div className="glass-card p-5 sm:p-6 flex flex-col gap-5 overflow-hidden">
@@ -2092,27 +2129,26 @@ export function PublicSaleSonarPage() {
                                 </div>
                               </div>
 
+                              {/* Eligibility status for the selected entity (bottom-right toast) */}
+                              {isConnected &&
+                                sonar.configured &&
+                                sonar.authenticated && (
+                                  <SonarStatusToast
+                                    status={sonar.status}
+                                    entity={sonar.activeEntity}
+                                    onDisconnect={sonar.logout}
+                                    loading={sonar.entitiesLoading}
+                                    error={sonar.entitiesError}
+                                    showEligible
+                                  />
+                                )}
+
                               {!saleOpen && (
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
-                                    <Lock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                                    <p className="text-xs font-semibold text-gray-700">
-                                      Registration closed
-                                    </p>
-                                  </div>
-                                  {sonar.authenticated && sonar.primaryEntity && (
-                                    <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
-                                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                                      <div>
-                                        <p className="text-xs font-semibold text-blue-700">
-                                          Entity verified
-                                        </p>
-                                        <p className="text-xs text-blue-600 mt-0.5">
-                                          {sonar.primaryEntity.Label} is eligible for participation
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )}
+                                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
+                                  <Lock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                                  <p className="text-xs font-semibold text-gray-700">
+                                    Registration closed
+                                  </p>
                                 </div>
                               )}
 
@@ -2162,6 +2198,26 @@ export function PublicSaleSonarPage() {
                                           <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
                                             {step.body}
                                           </p>
+                                          {step.note && (
+                                            <span
+                                              className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+                                                step.note.tone === "red"
+                                                  ? "bg-red-50 text-red-700 ring-red-200"
+                                                  : step.note.tone === "amber"
+                                                    ? "bg-amber-50 text-amber-800 ring-amber-200"
+                                                    : "bg-gray-50 text-gray-700 ring-gray-200"
+                                              }`}
+                                            >
+                                              {step.note.tone === "red" ? (
+                                                <AlertCircle className="w-3 h-3" />
+                                              ) : step.note.tone === "amber" ? (
+                                                <Info className="w-3 h-3" />
+                                              ) : (
+                                                <Clock className="w-3 h-3" />
+                                              )}
+                                              {step.note.text}
+                                            </span>
+                                          )}
                                         </div>
                                       </div>
                                     );
@@ -2334,7 +2390,7 @@ export function PublicSaleSonarPage() {
                                               )}
                                               <p className="text-[11px] text-gray-400 leading-relaxed pt-2 border-t border-gray-100">
                                                 Balance counts USDC and USDT on
-                                                Base only (the public sale
+                                                Ethereum only (the public sale
                                                 network).
                                               </p>
                                             </div>
@@ -2465,11 +2521,11 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
 
-                              {needsBaseSwitch && (
+                              {needsSaleChainSwitch && (
                                 <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                                   <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <p className="text-xs text-amber-800">
-                                    Switch your wallet to Base to verify balance
+                                    Switch your wallet to Ethereum to verify balance
                                     and {isRegistered ? "update" : "reserve"}{" "}
                                     your allocation.
                                   </p>
@@ -2530,8 +2586,8 @@ export function PublicSaleSonarPage() {
                                     sonar.connectSonar();
                                     return;
                                   }
-                                  if (needsBaseSwitch) {
-                                    switchToBase();
+                                  if (needsSaleChainSwitch) {
+                                    switchToSaleChain();
                                     return;
                                   }
                                   handleJoin();
@@ -2539,7 +2595,7 @@ export function PublicSaleSonarPage() {
                                 disabled={
                                   needsSonarConnect
                                     ? !sonar.ready
-                                    : needsBaseSwitch
+                                    : needsSaleChainSwitch
                                       ? false
                                       : !wlValid || sonarHasError
                                 }
@@ -2571,12 +2627,10 @@ export function PublicSaleSonarPage() {
                                   sonar.authenticated &&
                                   sonar.entitiesLoading ? (
                                   "Checking Sonar status…"
-                                ) : sonar.configured &&
-                                  sonar.authenticated &&
-                                  !sonarKycStarted ? (
-                                  "Start Sonar verification to join"
-                                ) : needsBaseSwitch ? (
-                                  "Switch to Base"
+                                ) : sonarBlockedLabel ? (
+                                  sonarBlockedLabel
+                                ) : needsSaleChainSwitch ? (
+                                  `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
                                 ) : (
                                   belowMin
                                     ? `Minimum $${minUsd.toLocaleString()} required`
@@ -2713,15 +2767,18 @@ export function PublicSaleSonarPage() {
                                 : "Pick a plan, enter an amount, then review before confirming."}
                             </p>
                           </div>
-                          <div className="flex items-center gap-1 rounded-lg   p-1">
-                            <p className="text-sm text-gray-500 mt-0.5">
-                              Network:
-                            </p>
-                            <img
-                              src="https://cdn.allox.ai/allox/networks/baseLarge.svg"
-                              alt="Network"
-                              className="w-14 h-14"
-                            />
+                          <div className="flex items-center gap-2 rounded-lg p-1">
+                            <p className="text-sm text-gray-500">Network:</p>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1">
+                              <img
+                                src={PUBLIC_SALE_CHAIN_LOGO}
+                                alt=""
+                                className="w-5 h-5 rounded-full"
+                              />
+                              <span className="text-sm font-semibold text-gray-900">
+                                {PUBLIC_SALE_CHAIN_NAME}
+                              </span>
+                            </span>
                           </div>
                         </div>
                         {/* <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3345,7 +3402,7 @@ export function PublicSaleSonarPage() {
                                     ? false
                                     : !isPrivateSale && needsSonarConnect
                                       ? !sonar.ready
-                                      : !isPrivateSale && needsBaseSwitch
+                                      : !isPrivateSale && needsSaleChainSwitch
                                         ? false
                                         : !liveCanSubmit ||
                                           (isPrivateSale && privateSale.contributing)
@@ -3360,8 +3417,8 @@ export function PublicSaleSonarPage() {
                                 sonar.connectSonar();
                                 return;
                               }
-                              if (needsBaseSwitch) {
-                                switchToBase();
+                              if (needsSaleChainSwitch) {
+                                switchToSaleChain();
                                 return;
                               }
                               return;
@@ -3384,7 +3441,7 @@ export function PublicSaleSonarPage() {
                             (!isPrivateSale &&
                               isConnected &&
                               (needsSonarConnect ||
-                                needsBaseSwitch ||
+                                needsSaleChainSwitch ||
                                 liveCanSubmit)) ||
                             (liveCanSubmit && !privateSale.contributing)
                               ? "bg-black text-white hover:bg-gray-800 active:scale-[0.99]"
@@ -3401,13 +3458,10 @@ export function PublicSaleSonarPage() {
                                   ? "Connect Wallet"
                                   : !isPrivateSale && needsSonarConnect
                                     ? "Connect with Sonar"
-                                    : !isPrivateSale && needsBaseSwitch
-                                      ? "Switch to Base"
-                                      : !isPrivateSale &&
-                                          sonar.configured &&
-                                          sonar.authenticated &&
-                                          !sonarKycStarted
-                                        ? "Complete Sonar verification"
+                                    : !isPrivateSale && needsSaleChainSwitch
+                                      ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
+                                      : !isPrivateSale && sonarBlockedLabel
+                                        ? sonarBlockedLabel
                                         : isPrivateSale &&
                                             privateSale.eligibilityLoading
                                           ? "Checking eligibility…"
@@ -3508,7 +3562,7 @@ export function PublicSaleSonarPage() {
                                           ? CHAIN_EXPLORERS[chainKey] ||
                                             CHAIN_EXPLORERS.BSC
                                           : TX_EXPLORERS[inv.network] ||
-                                            TX_EXPLORERS.Base;
+                                            TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME];
                                         const token = String(
                                           inv.token || "",
                                         ).toUpperCase();

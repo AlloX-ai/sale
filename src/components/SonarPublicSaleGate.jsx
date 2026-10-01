@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   EntitySetupState,
+  InvestingRegion,
   SaleEligibility,
 } from "@echoxyz/sonar-core";
 import { useSonarAuth, useSonarEntities } from "@echoxyz/sonar-react";
@@ -19,13 +20,26 @@ import {
   SONAR_OAUTH_RETURN_PATH_KEY,
 } from "../config/sonar";
 
+const INVESTING_REGION_LABELS = {
+  [InvestingRegion.US]: "United States",
+  [InvestingRegion.EU]: "European Union",
+  [InvestingRegion.OTHER]: "outside the US and EU",
+};
+
+/**
+ * Maps a Sonar entity to a user-facing eligibility status.
+ * `eligible` is the single gate for whitelist and purchase: only entities
+ * with completed KYC and SaleEligibility.ELIGIBLE may participate.
+ * `buttonLabel` is a short reason shown on blocked CTAs.
+ */
 export function describeSonarEntity(entity) {
   if (!entity) {
     return {
       tone: "amber",
       title: "No Sonar entity found",
       detail:
-        "Create or finish entity setup on Sonar with a wallet that matches the one connected here.",
+        "Create an entity on Sonar using the same email or wallet you're using here, then complete verification.",
+      buttonLabel: "Set up your entity on Sonar",
       eligible: false,
       needsSetup: true,
     };
@@ -34,16 +48,30 @@ export function describeSonarEntity(entity) {
   const setup = entity.EntitySetupState;
   const eligibility = entity.SaleEligibility;
 
+  if (setup === EntitySetupState.NOT_STARTED) {
+    return {
+      tone: "amber",
+      title: "Verification not started",
+      detail:
+        "Start identity and eligibility checks on Sonar. Only verified, eligible accounts can join the whitelist.",
+      buttonLabel: "Verify on Sonar to join",
+      eligible: false,
+      needsSetup: true,
+    };
+  }
+
   if (
-    setup === EntitySetupState.NOT_STARTED ||
     setup === EntitySetupState.IN_PROGRESS ||
     setup === EntitySetupState.READY_FOR_REVIEW
   ) {
     return {
       tone: "amber",
-      title: "Complete Sonar verification",
+      title: "Finish your Sonar verification",
       detail:
-        "Finish identity and eligibility checks on Sonar before you can join this sale.",
+        setup === EntitySetupState.READY_FOR_REVIEW
+          ? "Your details are ready. Submit them for review on Sonar to continue."
+          : "Your verification is in progress. Finish the remaining steps on Sonar to join the whitelist.",
+      buttonLabel: "Finish verification to join",
       eligible: false,
       needsSetup: true,
     };
@@ -54,20 +82,31 @@ export function describeSonarEntity(entity) {
       tone: "gray",
       title: "Verification under review",
       detail:
-        "Sonar is reviewing your entity. Check back once approval completes.",
+        "Sonar is reviewing your documents. You can join the whitelist as soon as you're approved.",
+      buttonLabel: "Verification under review",
       eligible: false,
     };
   }
 
-  if (
-    setup === EntitySetupState.FAILURE ||
-    setup === EntitySetupState.TECHNICAL_ISSUE
-  ) {
+  if (setup === EntitySetupState.FAILURE) {
     return {
       tone: "amber",
-      title: "Action needed on Sonar",
+      title: "Verification needs another try",
       detail:
-        "There is an issue with your entity setup that must be resolved on Sonar.",
+        "Sonar couldn't verify your details. Open Sonar to see what needs fixing and resubmit.",
+      buttonLabel: "Fix verification on Sonar",
+      eligible: false,
+      needsSetup: true,
+    };
+  }
+
+  if (setup === EntitySetupState.TECHNICAL_ISSUE) {
+    return {
+      tone: "amber",
+      title: "Verification hit a technical issue",
+      detail:
+        "Something went wrong on Sonar's side while checking your details. Open Sonar to retry, or contact Sonar support if it keeps happening.",
+      buttonLabel: "Retry verification on Sonar",
       eligible: false,
       needsSetup: true,
     };
@@ -76,8 +115,10 @@ export function describeSonarEntity(entity) {
   if (setup === EntitySetupState.FAILURE_FINAL) {
     return {
       tone: "red",
-      title: "Not eligible",
-      detail: "This Sonar entity is not eligible to invest in this sale.",
+      title: "Verification rejected",
+      detail:
+        "Sonar rejected this entity's verification, so it can't take part in this sale. Contact Sonar support if you think this is a mistake.",
+      buttonLabel: "Not eligible to join",
       eligible: false,
     };
   }
@@ -88,15 +129,28 @@ export function describeSonarEntity(entity) {
         tone: "green",
         title: "Eligible to participate",
         detail:
-          "Your Sonar verification is complete. You can invest or whitelist.",
+          "Your Sonar verification is complete and this entity is eligible for the sale.",
         eligible: true,
       };
     }
+    if (eligibility === SaleEligibility.NOT_ELIGIBLE) {
+      const region = INVESTING_REGION_LABELS[entity.InvestingRegion];
+      return {
+        tone: "red",
+        title: "Not eligible for this sale",
+        detail: `Your verification is complete, but this entity doesn't meet the sale's eligibility rules${
+          region ? ` (investing region on Sonar: ${region})` : ""
+        }. If you have another entity, switch to it from the Sonar menu at the top.`,
+        buttonLabel: "Not eligible to join",
+        eligible: false,
+      };
+    }
     return {
-      tone: "red",
-      title: "Not currently eligible",
+      tone: "gray",
+      title: "Checking sale eligibility",
       detail:
-        "Entity setup is complete, but this sale is not available to your entity yet.",
+        "Your verification is complete. Sonar is still confirming whether this entity can join this sale. Check back shortly.",
+      buttonLabel: "Eligibility check pending",
       eligible: false,
     };
   }
@@ -104,7 +158,9 @@ export function describeSonarEntity(entity) {
   return {
     tone: "gray",
     title: "Unknown status",
-    detail: "Could not interpret Sonar entity status.",
+    detail:
+      "We couldn't read your Sonar status. Refresh the page, or disconnect Sonar and connect again.",
+    buttonLabel: "Sonar status unavailable",
     eligible: false,
   };
 }
@@ -132,8 +188,12 @@ const TONE_STYLES = {
   },
 };
 
-/** Hook for public-sale Sonar OAuth + entity status. */
-export function useSonarPublicSaleAccess(walletAddress) {
+/**
+ * Hook for public-sale Sonar OAuth + entity status.
+ * `selectedEntityId` picks which of the user's entities drives `activeEntity`
+ * and `status`; falls back to the first entity.
+ */
+export function useSonarPublicSaleAccess(walletAddress, selectedEntityId) {
   const { ready, authenticated, login, logout } = useSonarAuth();
   const {
     loading: entitiesLoading,
@@ -145,7 +205,11 @@ export function useSonarPublicSaleAccess(walletAddress) {
   });
 
   const primaryEntity = entities?.[0] ?? null;
-  const status = authenticated ? describeSonarEntity(primaryEntity) : null;
+  const activeEntity =
+    (selectedEntityId &&
+      entities?.find((entity) => entity.EntityID === selectedEntityId)) ||
+    primaryEntity;
+  const status = authenticated ? describeSonarEntity(activeEntity) : null;
 
   const connectSonar = () => {
     // Pathname only — never store leftover ?code=&state= or we can loop
@@ -164,6 +228,7 @@ export function useSonarPublicSaleAccess(walletAddress) {
     entities,
     entitiesError,
     primaryEntity,
+    activeEntity,
     status,
     canViewSaleUi: Boolean(authenticated),
   };
@@ -236,6 +301,7 @@ export function SonarEntityStatusBanner({
   onDisconnect,
   loading,
   error,
+  showSonarLink = true,
 }) {
   if (loading) {
     return (
@@ -299,18 +365,18 @@ export function SonarEntityStatusBanner({
               </span>
             </div>
             <p className="text-sm text-gray-700">{status.detail}</p>
-            {/* {entity?.Label && (
+            {entity?.Label && (
               <p className="text-xs text-gray-500 mt-2">
                 Entity:{" "}
                 <span className="font-semibold text-gray-700">
                   {entity.Label}
                 </span>
               </p>
-            )} */}
+            )}
           </div>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          {(status.needsSetup || !entity) && (
+          {showSonarLink && (status.needsSetup || !entity) && (
             <a
               href={getSonarHomeUrl()}
               target="_blank"
@@ -345,6 +411,14 @@ const TOAST_TONE_STYLES = {
     box: "border-amber-200 bg-amber-50",
     icon: "text-amber-600",
   },
+  green: {
+    box: "border-emerald-200 bg-emerald-50",
+    icon: "text-emerald-600",
+  },
+  gray: {
+    box: "border-gray-200 bg-gray-50",
+    icon: "text-gray-500",
+  },
 };
 
 function SonarToastShell({ tone, onDismiss, children }) {
@@ -369,14 +443,25 @@ function SonarToastShell({ tone, onDismiss, children }) {
 }
 
 /**
- * Bottom-right toast for non-success Sonar states (errors, or entity states
- * that need action). Eligible/success is intentionally silent here — callers
- * that already show a "connected" indicator elsewhere shouldn't duplicate it.
+ * Bottom-right toast for the selected entity's Sonar status. By default only
+ * non-success states show; pass `showEligible` to also confirm eligibility.
+ * Dismissing hides it until the status or the selected entity changes.
  */
-export function SonarStatusToast({ status, entity, onDisconnect, loading, error }) {
+export function SonarStatusToast({
+  status,
+  entity,
+  onDisconnect,
+  loading,
+  error,
+  showEligible = false,
+}) {
   const [dismissed, setDismissed] = useState(false);
   const [lastDismissKey, setLastDismissKey] = useState(null);
-  const dismissKey = error ? `error:${error.message}` : status?.title;
+  const dismissKey = error
+    ? `error:${error.message}`
+    : status
+      ? `${entity?.EntityID ?? "none"}:${status.title}`
+      : null;
 
   if (dismissKey !== lastDismissKey) {
     setLastDismissKey(dismissKey);
@@ -410,10 +495,14 @@ export function SonarStatusToast({ status, entity, onDisconnect, loading, error 
     );
   }
 
-  if (!status || status.eligible) return null;
+  if (!status || (status.eligible && !showEligible)) return null;
 
-  const tone = status.tone === "red" ? "red" : "amber";
-  const StatusIcon = tone === "red" ? AlertCircle : Shield;
+  const tone = TOAST_TONE_STYLES[status.tone] ? status.tone : "amber";
+  const StatusIcon = status.eligible
+    ? CheckCircle
+    : tone === "red"
+      ? AlertCircle
+      : Shield;
 
   return (
     <SonarToastShell tone={tone} onDismiss={() => setDismissed(true)}>
@@ -423,6 +512,12 @@ export function SonarStatusToast({ status, entity, onDisconnect, loading, error 
       <div className="min-w-0 flex-1">
         <h5 className="font-bold text-sm text-gray-900 mb-1">{status.title}</h5>
         <p className="text-xs text-gray-600 mb-2">{status.detail}</p>
+        {entity?.Label && (
+          <p className="text-[11px] text-gray-500 mb-2">
+            Entity:{" "}
+            <span className="font-semibold text-gray-700">{entity.Label}</span>
+          </p>
+        )}
         <div className="flex flex-wrap gap-3">
           {(status.needsSetup || !entity) && (
             <a
@@ -483,7 +578,7 @@ export function SonarPublicSaleGate({
     <>
       <SonarStatusToast
         status={sonar.status}
-        entity={sonar.primaryEntity}
+        entity={sonar.activeEntity}
         onDisconnect={sonar.logout}
         loading={sonar.entitiesLoading}
         error={sonar.entitiesError}

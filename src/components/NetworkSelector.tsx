@@ -14,6 +14,7 @@ import {
   switchPrivyEmbeddedToChain,
 } from "../utils/privyWalletUtils";
 import { persistWalletType } from "../utils/walletPersistence";
+import { PUBLIC_SALE_CHAIN_ID } from "../utils/publicSaleApi";
 
 const PREFERRED_CHAIN_STORAGE_KEY = "walletPreferredChainId";
 const SOLANA_CHAIN_ID = 101;
@@ -35,13 +36,13 @@ type NetworkOption = {
 
 type NetworkSelectorProps = {
   onDisconnectClick: () => void;
-  /** Limit the dropdown to Base (public sale). Wrong chain shows the error icon. */
-  baseNetworkOnly?: boolean;
+  /** Limit the dropdown to the public sale network (Ethereum). Wrong chain shows the error icon. */
+  saleNetworkOnly?: boolean;
 };
 
 export function NetworkSelector({
   onDisconnectClick,
-  baseNetworkOnly = false,
+  saleNetworkOnly = false,
 }: NetworkSelectorProps) {
   const dispatch = useDispatch();
   const [isOpen, setIsOpen] = useState(false);
@@ -135,8 +136,8 @@ export function NetworkSelector({
     },
   ];
 
-  const selectableNetworks = baseNetworkOnly
-    ? networks.filter((network) => network.chainId === 8453)
+  const selectableNetworks = saleNetworkOnly
+    ? networks.filter((network) => network.chainId === PUBLIC_SALE_CHAIN_ID)
     : networks;
 
   const selectedNetwork =
