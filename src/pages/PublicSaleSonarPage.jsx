@@ -925,6 +925,7 @@ export function PublicSaleSonarPage() {
   const sonar = useSonarPublicSaleAccess(
     walletAddress,
     selectedEntity?.EntityID,
+    saleState,
   );
 
   const needsSonarConnect =
@@ -1624,7 +1625,7 @@ export function PublicSaleSonarPage() {
                                             {sonar.entities.map((entity) => {
                                               const isSelected = entity.EntityID === currentEntity?.EntityID;
                                               const label = entity.Label || "Unnamed Entity";
-                                              const entityStatus = describeSonarEntity(entity);
+                                              const entityStatus = describeSonarEntity(entity, saleState);
                                               return (
                                                 <button
                                                   key={entity.EntityID}
@@ -1885,6 +1886,20 @@ export function PublicSaleSonarPage() {
               >
                 {liveSaleKind === "public" && saleState === "live" && (
                   <>
+                    {/* Eligibility status for the selected entity (bottom-right toast).
+                        Only KYC-verified, eligible entities can buy in the live sale. */}
+                    {isConnected &&
+                      sonar.configured &&
+                      sonar.authenticated && (
+                        <SonarStatusToast
+                          status={sonar.status}
+                          entity={sonar.activeEntity}
+                          onDisconnect={sonar.logout}
+                          loading={sonar.entitiesLoading}
+                          error={sonar.entitiesError}
+                          showEligible
+                        />
+                      )}
                     {(() => {
                       const subscriptionX =
                         commitData?.raisedUsd / commitData?.goalUsd;
