@@ -672,7 +672,7 @@ function shortenTxHash(hash) {
 }
 
 // Whitelist allocation limits (USD)
-const WL_MIN_USD = 10;
+const WL_MIN_USD = 100;
 const WL_MAX_USD = 200_000;
 
 // Keep only a positive decimal (max 2 fraction digits) and clamp it to the max.
@@ -1150,8 +1150,12 @@ export function PublicSaleSonarPage() {
     setTimeout(() => setClaimSuccess(false), 3000);
   };
 
+  // Lowering only helps when the balance still covers the minimum allocation.
+  const canLowerToBalance =
+    walletBalanceUsd != null && Math.floor(walletBalanceUsd) >= minUsd;
+
   const lowerToBalance = () => {
-    if (walletBalanceUsd == null) return;
+    if (!canLowerToBalance) return;
     const lowered = Math.min(Math.floor(walletBalanceUsd), maxUsd);
     setWlAmount(lowered > 0 ? String(lowered) : "");
     setSubmitError(null);
@@ -2483,13 +2487,29 @@ export function PublicSaleSonarPage() {
                                             </span>{" "}
                                             more in your wallet to proceed.
                                           </p>
-                                          <button
-                                            type="button"
-                                            onClick={lowerToBalance}
-                                            className="text-xs font-semibold text-red-700 underline mt-1"
-                                          >
-                                            Lower amount to available balance
-                                          </button>
+                                          {canLowerToBalance ? (
+                                            <button
+                                              type="button"
+                                              onClick={lowerToBalance}
+                                              className="text-xs font-semibold text-red-700 underline mt-1"
+                                            >
+                                              Lower amount to available balance
+                                            </button>
+                                          ) : (
+                                            <p className="text-xs text-red-600 mt-1">
+                                              The minimum allocation is $
+                                              {minUsd.toLocaleString()}. Add at
+                                              least $
+                                              {Math.max(
+                                                0,
+                                                minUsd - walletBalanceUsd,
+                                              ).toLocaleString(undefined, {
+                                                maximumFractionDigits: 2,
+                                              })}{" "}
+                                              in USDC or USDT on{" "}
+                                              {PUBLIC_SALE_CHAIN_NAME} to join.
+                                            </p>
+                                          )}
                                         </div>
                                       </div>
                                     </motion.div>
@@ -2564,7 +2584,7 @@ export function PublicSaleSonarPage() {
                                           {submitError.message}
                                         </p>
                                         {submitError.status === 422 &&
-                                          walletBalanceUsd != null && (
+                                          canLowerToBalance && (
                                             <button
                                               type="button"
                                               onClick={lowerToBalance}
