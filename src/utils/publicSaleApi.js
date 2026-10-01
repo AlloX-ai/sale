@@ -1,8 +1,8 @@
 import { apiCall } from "./api";
 
 const WHITELIST_ENDPOINT = "/public-sale/whitelist";
-const WHITELIST_CHAIN_QUERY = `${WHITELIST_ENDPOINT}?chain=base`;
-const WHITELIST_SONAR_CHAIN_QUERY = `${WHITELIST_ENDPOINT}/sonar?chain=base`;
+const WHITELIST_CHAIN_QUERY = `${WHITELIST_ENDPOINT}`;
+const WHITELIST_SONAR_CHAIN_QUERY = `${WHITELIST_ENDPOINT}/sonar`;
 
 /** EVM chain id for the Sonar public sale (Base mainnet). */
 export const PUBLIC_SALE_CHAIN_ID = 8453;
