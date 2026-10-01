@@ -378,7 +378,7 @@ const SALE_KIND_META = {
     status: "Live Now",
     statusTone: "live",
     fdv: "$65M",
-    lines: ["Open to everyone via Sonar's onchain token sale infrastructure."],
+    lines: ["Open to KYC'd persons from eligible jurisdictions via Sonar's onchain token sale infrastructure."],
     extras: [
       {
         title: "Public Round",
@@ -393,7 +393,6 @@ const SALE_KIND_META = {
     bg: "https://cdn.allox.ai/allox/publicSale/publicSaleBg.png",
     logo: "https://cdn.allox.ai/allox/publicSale/sonarLogo.svg",
     logoAlt: "SONAR by ECHO",
-    coinbaseLogo: "https://cdn.allox.ai/allox/publicSale/coinbaseWhite.svg",
   },
 };
 
@@ -804,6 +803,7 @@ export function PublicSaleSonarPage() {
   const [wlStep, setWlStep] = useState("connect");
   const [wlAmount, setWlAmount] = useState("");
   const [email, setEmail] = useState("");
+  const [selectedEntity, setSelectedEntity] = useState(null);
   const [successCountdown, setSuccessCountdown] = useState(5);
   const [liveAmount, setLiveAmount] = useState("");
   const [liveSaleKind, setLiveSaleKind] = useState("public");
@@ -1038,7 +1038,7 @@ export function PublicSaleSonarPage() {
   // Sonar entity to attach to the whitelist registration (null until the
   // user connects Sonar and their entity loads).
   const sonarEntityId = sonar.authenticated
-    ? (sonar.primaryEntity?.EntityID ?? null)
+    ? (selectedEntity?.EntityID ?? sonar.primaryEntity?.EntityID ?? null)
     : null;
 
   // Registered before connecting Sonar (or before this field existed): link
@@ -1588,20 +1588,27 @@ export function PublicSaleSonarPage() {
                             </span>
                             <div className="h-px flex-1 bg-white/25" />
                           </div>
-                          <div className="flex items-center justify-between opacity-100">
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={meta.coinbaseLogo}
-                                alt="Coinbase"
-                                className="h-7 sm:h-5 w-auto max-w-[100px] sm:max-w-[140px] object-contain object-right drop-shadow opacity-100"
-                              />
-                            </div>
+                          <div className="flex items-center justify-center opacity-100">
                             <div className="flex items-baseline gap-1.5 pl-0.5">
-                              <img
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  window.open(
+                                    getSonarHomeUrl(),
+                                    "_blank",
+                                    "noopener,noreferrer"
+                                  )
+                                }
+                                className="ml-2 text-white/70 hover:text-white transition-colors hover:border-b-2 flex items-end gap-1.5 border-b-2 border-transparent hover:border-white/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
+                                title="View on Sonar"
+                              >   <img
                                 src={meta.logo}
                                 alt="SONAR by ECHO"
                                 className="h-7 sm:h-5 w-auto max-w-[100px] sm:max-w-[140px] object-contain object-right drop-shadow opacity-100"
                               />
+                           
+                                <ExternalLink className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1933,11 +1940,26 @@ export function PublicSaleSonarPage() {
                               </div>
 
                               {!saleOpen && (
-                                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
-                                  <Lock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                                  <p className="text-xs font-semibold text-gray-700">
-                                    Registration closed
-                                  </p>
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
+                                    <Lock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                                    <p className="text-xs font-semibold text-gray-700">
+                                      Registration closed
+                                    </p>
+                                  </div>
+                                  {sonar.authenticated && sonar.primaryEntity && (
+                                    <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+                                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                                      <div>
+                                        <p className="text-xs font-semibold text-blue-700">
+                                          Entity verified
+                                        </p>
+                                        <p className="text-xs text-blue-600 mt-0.5">
+                                          {sonar.primaryEntity.Label} is eligible for participation
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
@@ -2265,6 +2287,38 @@ export function PublicSaleSonarPage() {
                                   )}
                                 </AnimatePresence>
                               </div>
+
+                              {sonar.authenticated && sonar.entities && sonar.entities.length > 0 && (
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                                    <Users className="w-3 h-3" />
+                                    Entity
+                                    {sonar.entities.length > 1 && (
+                                      <span className="font-normal text-gray-400 normal-case">
+                                        Select one
+                                      </span>
+                                    )}
+                                  </label>
+                                  <div className="relative mb-4">
+                                    <select
+                                      value={selectedEntity ? selectedEntity.EntityID : (sonar.primaryEntity?.EntityID ?? "")}
+                                      onChange={(e) => {
+                                        const entity = sonar.entities?.find((ent) => ent.EntityID === e.target.value);
+                                        setSelectedEntity(entity || null);
+                                      }}
+                                      disabled={!saleOpen || sonar.entities.length === 1}
+                                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-sm bg-white/80 transition-colors disabled:opacity-50 appearance-none cursor-pointer"
+                                    >
+                                      {sonar.entities?.map((entity) => (
+                                        <option key={entity.EntityID} value={entity.EntityID}>
+                                          {entity.Label || "Unnamed Entity"}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                                  </div>
+                                </div>
+                              )}
 
                               <div>
                                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5 mb-2">
