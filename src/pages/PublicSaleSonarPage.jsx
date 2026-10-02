@@ -612,7 +612,6 @@ const MOCK_REFERRALS = [
 const TX_EXPLORERS = {
   Base: "https://basescan.org/tx/",
   Ethereum: "https://etherscan.io/tx/",
-  Sepolia: "https://sepolia.etherscan.io/tx/",
   "BNB Chain": "https://bscscan.com/tx/",
   BNB: "https://bscscan.com/tx/",
 };
@@ -623,7 +622,7 @@ function shortenTxHash(hash) {
 }
 
 // Whitelist allocation limits (USD)
-const WL_MIN_USD = 5;
+const WL_MIN_USD = 100;
 const WL_MAX_USD = 200_000;
 
 // Keep only a positive decimal (max 2 fraction digits) and clamp it to the max.
@@ -711,7 +710,7 @@ function formatCompactNumber(value) {
   return `${sign}${abs.toLocaleString()}`;
 }
 
-const SALE_DATE = new Date("2026-10-07T23:59:59Z");
+const SALE_DATE = new Date("2026-10-12T23:59:59Z");
 const LIVE_SALE_END = new Date("2026-09-01T23:59:59Z");
 const LIVE_TOTAL_COMMITTED = 1_503_842;
 const LIVE_ASSET_LOGOS = {
@@ -1230,7 +1229,7 @@ export function PublicSaleSonarPage() {
   };
 
   const WL_PRESETS = ["$100", "$500", "$1,000", "$5,000", "$10,000"];
-  const LIVE_PRESETS = ["$5", "$100", "$500", "MAX"];
+  const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
   const liveMinUsd = isPrivateSale ? privateSale.minContributionUsd : WL_MIN_USD;
   const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
   const publicLiveSonarReady =
@@ -1405,7 +1404,7 @@ export function PublicSaleSonarPage() {
           </div>
         </div> */}
 
-        {liveSaleKind === "public" && (
+        {/* {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
          
             <div className="flex p-1 bg-white/60 backdrop-blur-xl border border-white/60 rounded-xl shadow-sm mt-4 md:mt-0">
@@ -1420,7 +1419,7 @@ export function PublicSaleSonarPage() {
               ))}
             </div>
           </div>
-        )}
+        )} */}
         <AnimatePresence mode="wait">
           {/* ══ LIVE TAB ══ */}
           {/* {saleState === "live" && ( */}

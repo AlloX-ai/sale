@@ -18,7 +18,7 @@ export const private_sale_eth_address =
   "0xfAc9afd734DB570F010116891065C88D47E56837";
 
 export const public_sale_eth_address =
-  "0x86324c68C38Ec464Bc5712655f4425252a0E6e8a";
+  "0xe957A9f3c839DcC537aec9E9De6b5057cda25f00";
 
 export const PUBLIC_SALE_ETH_ABI = [
   { inputs: [], stateMutability: "nonpayable", type: "constructor" },
