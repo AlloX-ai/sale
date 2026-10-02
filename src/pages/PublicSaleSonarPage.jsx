@@ -612,6 +612,7 @@ const MOCK_REFERRALS = [
 const TX_EXPLORERS = {
   Base: "https://basescan.org/tx/",
   Ethereum: "https://etherscan.io/tx/",
+  Sepolia: "https://sepolia.etherscan.io/tx/",
   "BNB Chain": "https://bscscan.com/tx/",
   BNB: "https://bscscan.com/tx/",
 };
@@ -622,7 +623,7 @@ function shortenTxHash(hash) {
 }
 
 // Whitelist allocation limits (USD)
-const WL_MIN_USD = 100;
+const WL_MIN_USD = 5;
 const WL_MAX_USD = 200_000;
 
 // Keep only a positive decimal (max 2 fraction digits) and clamp it to the max.
@@ -1125,6 +1126,18 @@ export function PublicSaleSonarPage() {
   }, [wlStep, successCountdown]);
 
   // Live purchase
+  // Sonar purchase flow for the public live sale (Ethereum SettlementSale).
+  const publicPurchase = useSonarPublicSalePurchase({
+    entity: sonar.activeEntity,
+    walletAddress,
+    enabled:
+      liveSaleKind === "public" &&
+      saleState === "live" &&
+      isConnected &&
+      !isSolanaWallet,
+    currentChainId: currentEvmChainId,
+    switchToSaleChain,
+  });
   const isPrivateSale = liveSaleKind === "private";
   const activePlans = isPrivateSale
     ? privateSale.plansWithEligibility
@@ -1168,23 +1181,25 @@ export function PublicSaleSonarPage() {
     Number(privateSelectedTierPosition?.allocationTokens) || 0;
   const privateTierUsd =
     Number(privateSelectedTierPosition?.contributedUsd) || 0;
-  const privateHasTierPosition =
-    isPrivateSale && (privateTierAllocation > 0 || privateTierUsd > 0);
-  // Prefer live entry preview; fall back to this tier's confirmed position.
+  // Confirmed position shown in the allocation panel. Public commitments are
+  // not split by plan on-chain, so the total is priced at the selected plan.
+  const publicCommittedUsd = isPrivateSale
+    ? 0
+    : Number(publicPurchase.committedTotal) || 0;
+  const positionUsd = isPrivateSale ? privateTierUsd : publicCommittedUsd;
+  const positionTokens = isPrivateSale
+    ? privateTierAllocation
+    : livePlan?.price
+      ? publicCommittedUsd / livePlan.price
+      : 0;
+  const hasPosition = positionTokens > 0 || positionUsd > 0;
+  // Prefer live entry preview; fall back to the confirmed position.
   const estimateTokensRaw =
-    isPrivateSale && liveTokensRaw <= 0 && privateTierAllocation > 0
-      ? privateTierAllocation
-      : liveTokensRaw;
+    liveTokensRaw <= 0 && positionTokens > 0 ? positionTokens : liveTokensRaw;
   const liveTgeTokensRaw = (estimateTokensRaw * (livePlan?.tgePct ?? 0)) / 100;
   const liveAllox =
-    liveNum || (isPrivateSale && privateTierAllocation > 0)
-      ? formatCompactNumber(
-          Math.floor(
-            isPrivateSale && liveTokensRaw <= 0 && privateTierAllocation > 0
-              ? privateTierAllocation
-              : liveTokensRaw,
-          ),
-        )
+    liveNum || positionTokens > 0
+      ? formatCompactNumber(Math.floor(estimateTokensRaw))
       : "0";
   const liveTgeTokens = formatCompactNumber(Math.floor(liveTgeTokensRaw));
   const liveLockedTokens = formatCompactNumber(
@@ -1207,25 +1222,13 @@ export function PublicSaleSonarPage() {
   };
 
   const WL_PRESETS = ["$100", "$500", "$1,000", "$5,000", "$10,000"];
-  const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
-  const liveMinUsd = isPrivateSale ? privateSale.minContributionUsd : 100;
+  const LIVE_PRESETS = ["$5", "$100", "$500", "MAX"];
+  const liveMinUsd = isPrivateSale ? privateSale.minContributionUsd : WL_MIN_USD;
   const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
   const publicLiveSonarReady =
     !sonar.configured ||
     (sonar.authenticated && sonarEligible && !sonarHasError);
 
-  // Sonar purchase flow for the public live sale (Ethereum SettlementSale).
-  const publicPurchase = useSonarPublicSalePurchase({
-    entity: sonar.activeEntity,
-    walletAddress,
-    enabled:
-      liveSaleKind === "public" &&
-      saleState === "live" &&
-      isConnected &&
-      !isSolanaWallet,
-    currentChainId: currentEvmChainId,
-    switchToSaleChain,
-  });
   const publicSaleBlocked =
     !isPrivateSale &&
     (publicPurchase.saleInfo?.paused ||
@@ -3951,24 +3954,20 @@ export function PublicSaleSonarPage() {
 
                       <div className="relative pl-3.5 border-l-[3px] border-indigo-500">
                         <div className="text-3xl md:text-4xl font-bold text-gray-900 tabular-nums tracking-tight">
-                          {isPrivateSale &&
-                          privateHasTierPosition &&
-                          liveNum <= 0
-                            ? formatCompactNumber(privateTierAllocation)
+                          {hasPosition && liveNum <= 0
+                            ? formatCompactNumber(positionTokens)
                             : liveAllox}{" "}
                           ALLOX
                         </div>
                         <div className="mt-2 text-sm text-gray-500">
-                          {isPrivateSale &&
-                          privateHasTierPosition &&
-                          liveNum <= 0
-                            ? `Your ${livePlan?.name || "tier"} contribution`
+                          {hasPosition && liveNum <= 0
+                            ? isPrivateSale
+                              ? `Your ${livePlan?.name || "tier"} contribution`
+                              : "Your commitment"
                             : "Contribution preview"}{" "}
                           <span className="font-bold text-gray-900">
-                            {isPrivateSale &&
-                            privateHasTierPosition &&
-                            liveNum <= 0
-                              ? `$${privateTierUsd.toLocaleString(undefined, {
+                            {hasPosition && liveNum <= 0
+                              ? `$${positionUsd.toLocaleString(undefined, {
                                   maximumFractionDigits: 2,
                                 })}`
                               : `$${liveNum.toLocaleString(undefined, {
@@ -3979,33 +3978,31 @@ export function PublicSaleSonarPage() {
                         </div>
                         {isPrivateSale &&
                           privateSale.positionLoading &&
-                          !privateHasTierPosition && (
+                          !hasPosition && (
                             <p className="text-xs text-gray-400 mt-1.5">
                               Loading your position…
                             </p>
                           )}
-                        {isPrivateSale &&
-                          privateHasTierPosition &&
-                          liveNum > 0 && (
+                        {hasPosition && liveNum > 0 && (
                             <p className="text-xs text-gray-500 mt-1.5">
-                              Current {livePlan?.name || "tier"} position:{" "}
+                              {isPrivateSale
+                                ? `Current ${livePlan?.name || "tier"} position:`
+                                : "Current commitment:"}{" "}
                               <span className="font-semibold text-gray-800">
-                                {formatCompactNumber(privateTierAllocation)}{" "}
+                                {formatCompactNumber(positionTokens)}{" "}
                                 ALLOX
                               </span>
                               {" · "}
                               <span className="font-semibold text-gray-800">
                                 $
-                                {privateTierUsd.toLocaleString(undefined, {
+                                {positionUsd.toLocaleString(undefined, {
                                   maximumFractionDigits: 2,
                                 })}{" "}
                                 contributed
                               </span>
                             </p>
                           )}
-                        {isPrivateSale &&
-                          privateTierAllocation > 0 &&
-                          liveNum > 0 && (
+                        {positionTokens > 0 && liveNum > 0 && (
                             <p className="text-xs text-indigo-600 mt-1.5 font-medium">
                               + {formatCompactNumber(liveTokensRaw)} ALLOX from
                               current entry

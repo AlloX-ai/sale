@@ -429,7 +429,13 @@ export function useSonarPublicSalePurchase({
 
         const maxAmount = BigInt(permit.MaxAmount);
         const minAmount = BigInt(permit.MinAmount);
-        if (maxAmount > 0n && newTotalRaw > maxAmount) {
+        // The contract treats MaxAmount 0 as "no allocation", not "no limit".
+        if (maxAmount === 0n) {
+          throw new Error(
+            "No purchase allocation is set for your account on this sale. Please contact support.",
+          );
+        }
+        if (newTotalRaw > maxAmount) {
           throw new Error(
             `Your total would be ${formatUnits(newTotalRaw, token.decimals)} ${token.symbol}, above your limit of ${formatUnits(maxAmount, token.decimals)}.`,
           );

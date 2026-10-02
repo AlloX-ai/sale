@@ -95,6 +95,16 @@ export function NetworkSelector({
       nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     },
     {
+      name: 'Sepolia',
+      icon: 'https://cdn.allox.ai/allox/networks/eth.svg',
+      chainId: 11155111,
+      chainHex: '0xaa36a7',
+      chainName: 'Sepolia',
+      rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+      blockExplorerUrls: ['https://sepolia.etherscan.io'],
+      nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    },
+    {
       name: 'BNB Chain',
       icon: 'https://cdn.allox.ai/allox/networks/bnbIcon.svg',
       chainId: 56,
