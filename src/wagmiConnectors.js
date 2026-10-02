@@ -1,5 +1,5 @@
 import { createConfig, createStorage, fallback, http } from "wagmi";
-import { mainnet, sepolia, opBNB, bsc, base } from "wagmi/chains";
+import { mainnet, opBNB, bsc, base } from "wagmi/chains";
 import { defineChain } from "viem";
 import {
   metaMask,
@@ -47,11 +47,6 @@ const ETHEREUM_RPC_ENDPOINTS = [
   "https://mainnet.infura.io/v3/7698640038364a678705d3fdd84704f4",
 ];
 
-const SEPOLIA_RPC_ENDPOINTS = [
-  "https://ethereum-sepolia-rpc.publicnode.com",
-  "https://eth-sepolia-testnet.api.pocket.network",
-];
-
 export const WALLET_CONNECT_PROJECT_ID = "74cdef10fa7dbea4822525c23a70114c";
 
 export const WALLET_CONNECT_METADATA = {
@@ -66,7 +61,7 @@ export const WALLET_CONNECT_METADATA = {
 };
 
 export const wagmiClient = createConfig({
-  chains: [mainnet, opBNB, bsc, base, robinhoodChain, sepolia],
+  chains: [mainnet, opBNB, bsc, base, robinhoodChain],
   storage:
     typeof window !== "undefined"
       ? createStorage({ storage: window.localStorage })
@@ -111,7 +106,6 @@ export const wagmiClient = createConfig({
   transports: {
     [bsc.id]: fallback(BSC_RPC_ENDPOINTS.map((url) => http(url))),
     [mainnet.id]: fallback(ETHEREUM_RPC_ENDPOINTS.map((url) => http(url))),
-    [sepolia.id]: fallback(SEPOLIA_RPC_ENDPOINTS.map((url) => http(url))),
     [opBNB.id]: fallback(OPBNB_RPC_ENDPOINTS.map((url) => http(url))),
     [base.id]: fallback(BASE_RPC_ENDPOINTS.map((url) => http(url))),
     [robinhoodChain.id]: fallback(

@@ -76,12 +76,12 @@ export function SonarOAuthCallbackPage() {
     if (!ready || !authenticated) return;
 
     const returnPathRaw =
-      localStorage.getItem(SONAR_OAUTH_RETURN_PATH_KEY) || "/sonar-public-sale";
+      localStorage.getItem(SONAR_OAUTH_RETURN_PATH_KEY) || "/";
     localStorage.removeItem(SONAR_OAUTH_RETURN_PATH_KEY);
     sessionStorage.removeItem(OAUTH_CODE_HANDLED_KEY);
 
     // Never bounce back to the callback (or a URL still carrying oauth params)
-    let returnPath = "/sonar-public-sale";
+    let returnPath = "/";
     try {
       const url = new URL(returnPathRaw, window.location.origin);
       if (
@@ -105,7 +105,7 @@ export function SonarOAuthCallbackPage() {
   }, []);
 
   const goHome = () => {
-    window.location.href = "/sonar-public-sale";
+    window.location.href = "/";
   };
 
   if (timedOut && !authenticated && !oauthError) {

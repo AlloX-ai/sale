@@ -4,9 +4,9 @@ const WHITELIST_ENDPOINT = "/public-sale/whitelist";
 const WHITELIST_CHAIN_QUERY = `${WHITELIST_ENDPOINT}`;
 const WHITELIST_SONAR_CHAIN_QUERY = `${WHITELIST_ENDPOINT}/sonar`;
 
-/** EVM chain id for the Sonar public sale (Sepolia testnet; mainnet is 1 / "Ethereum"). */
-export const PUBLIC_SALE_CHAIN_ID = 11155111;
-export const PUBLIC_SALE_CHAIN_NAME = "Sepolia";
+/** EVM chain id for the Sonar public sale (Ethereum mainnet). */
+export const PUBLIC_SALE_CHAIN_ID = 1;
+export const PUBLIC_SALE_CHAIN_NAME = "Ethereum";
 export const PUBLIC_SALE_CHAIN_LOGO =
   "https://cdn.allox.ai/allox/networks/eth.svg";
 

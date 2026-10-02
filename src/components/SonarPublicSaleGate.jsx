@@ -223,7 +223,7 @@ export function useSonarPublicSaleAccess(
 
   const connectSonar = () => {
     // Pathname only — never store leftover ?code=&state= or we can loop
-    const returnPath = window.location.pathname || "/sonar-public-sale";
+    const returnPath = window.location.pathname || "/";
     localStorage.setItem(SONAR_OAUTH_RETURN_PATH_KEY, returnPath);
     return login();
   };

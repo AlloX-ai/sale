@@ -21,7 +21,7 @@ import { WalletProvider as SolanaWalletProvider } from "@solana/wallet-adapter-r
 import { PrivyProvider } from "@privy-io/react-auth";
 import { SonarProvider } from "@echoxyz/sonar-react";
 import { ThemeProvider } from "./components/ThemeProvider";
-import { bsc, mainnet, base, sepolia } from "viem/chains";
+import { bsc, mainnet, base } from "viem/chains";
 
 import "./index.css";
 import App from "./App.jsx";
@@ -62,7 +62,7 @@ createRoot(document.getElementById("root")).render(
                     loginMethods: ["email", "apple", "google"],
                     appearance: { theme: "dark" },
                     // Align embedded wallet + fundWallet with BNB first; must match chains you use in the app
-                    supportedChains: [bsc, mainnet, base, sepolia],
+                    supportedChains: [bsc, mainnet, base],
                     defaultChain: bsc,
                     embeddedWallets: {
                       createOnLogin: "users-without-wallets", // auto-create for email/Google/Apple
