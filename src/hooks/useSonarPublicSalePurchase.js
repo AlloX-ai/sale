@@ -296,6 +296,10 @@ export function useSonarPublicSalePurchase({
           setCurrentTotalRaw(state?.currentBid?.amount ?? 0n);
           setCommittedByToken(byToken);
         }
+      } else if (mountedRef.current) {
+        // No entity (e.g. Sonar disconnected): drop the previous position.
+        setCurrentTotalRaw(0n);
+        setCommittedByToken({});
       }
       if (walletAddress) {
         const balances = await Promise.all(
@@ -330,7 +334,7 @@ export function useSonarPublicSalePurchase({
     if (enabled) loadPosition();
   }, [enabled, loadPosition]);
 
-  // A new entity or wallet invalidates any previous check result.
+  // A new entity or wallet invalidates any previous check result and position.
   const entityID = entity?.EntityID;
   const resultKey = `${entityID ?? ""}:${walletAddress ?? ""}`;
   const [lastResultKey, setLastResultKey] = useState(resultKey);
@@ -339,6 +343,9 @@ export function useSonarPublicSalePurchase({
     setFailure(null);
     setError(null);
     setStep("idle");
+    setLastTxHash(null);
+    setCurrentTotalRaw(0n);
+    setCommittedByToken({});
   }
 
   const getToken = useCallback(

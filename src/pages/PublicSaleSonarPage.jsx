@@ -65,7 +65,7 @@ import {
 import binanceLaptop from "../assets/binanceLaptop.png";
 import { AlloxSaleTermsModal } from "../components/AlloxSaleTermsModal";
 import {
-  SonarStatusToast,
+  SonarStatusInline,
   SonarNotConfiguredNotice,
   describeSonarEntity,
   useSonarPublicSaleAccess,
@@ -1011,6 +1011,14 @@ export function PublicSaleSonarPage() {
         ? "Sonar status unavailable"
         : sonar.status?.buttonLabel || "Not eligible to join"
       : null;
+  // The blocked CTA links out when the next step happens on Sonar
+  // (start / finish / retry verification, or create an entity).
+  const sonarNeedsSonarStep =
+    Boolean(sonarBlockedLabel) &&
+    !sonar.entitiesError &&
+    Boolean(sonar.status?.needsSetup);
+  const openSonar = () =>
+    window.open(getSonarHomeUrl(), "_blank", "noopener,noreferrer");
   const wlValid =
     saleOpen &&
     !wlSubmitting &&
@@ -1128,7 +1136,7 @@ export function PublicSaleSonarPage() {
   // Live purchase
   // Sonar purchase flow for the public live sale (Ethereum SettlementSale).
   const publicPurchase = useSonarPublicSalePurchase({
-    entity: sonar.activeEntity,
+    entity: sonar.authenticated ? sonar.activeEntity : null,
     walletAddress,
     enabled:
       liveSaleKind === "public" &&
@@ -1889,20 +1897,6 @@ export function PublicSaleSonarPage() {
               >
                 {liveSaleKind === "public" && saleState === "live" && (
                   <>
-                    {/* Eligibility status for the selected entity (bottom-right toast).
-                        Only KYC-verified, eligible entities can buy in the live sale. */}
-                    {isConnected &&
-                      sonar.configured &&
-                      sonar.authenticated && (
-                        <SonarStatusToast
-                          status={sonar.status}
-                          entity={sonar.activeEntity}
-                          onDisconnect={sonar.logout}
-                          loading={sonar.entitiesLoading}
-                          error={sonar.entitiesError}
-                          showEligible
-                        />
-                      )}
                     {(() => {
                       const subscriptionX =
                         commitData?.raisedUsd / commitData?.goalUsd;
@@ -2151,11 +2145,11 @@ export function PublicSaleSonarPage() {
                                 </div>
                               </div>
 
-                              {/* Eligibility status for the selected entity (bottom-right toast) */}
+                              {/* Eligibility status for the selected entity */}
                               {isConnected &&
                                 sonar.configured &&
                                 sonar.authenticated && (
-                                  <SonarStatusToast
+                                  <SonarStatusInline
                                     status={sonar.status}
                                     entity={sonar.activeEntity}
                                     onDisconnect={sonar.logout}
@@ -2624,6 +2618,10 @@ export function PublicSaleSonarPage() {
                                     sonar.connectSonar();
                                     return;
                                   }
+                                  if (saleOpen && sonarNeedsSonarStep) {
+                                    openSonar();
+                                    return;
+                                  }
                                   if (needsSaleChainSwitch) {
                                     switchToSaleChain();
                                     return;
@@ -2633,7 +2631,8 @@ export function PublicSaleSonarPage() {
                                 disabled={
                                   needsSonarConnect
                                     ? !sonar.ready
-                                    : needsSaleChainSwitch
+                                    : (saleOpen && sonarNeedsSonarStep) ||
+                                        needsSaleChainSwitch
                                       ? false
                                       : !wlValid || sonarHasError
                                 }
@@ -2792,7 +2791,7 @@ export function PublicSaleSonarPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     {/* Left — contribution form */}
 
-                    <div className="lg:col-span-7 glass-card p-5 md:p-6 flex flex-col gap-5">
+                    <div className="lg:col-span-7 glass-card p-5 md:p-6 flex flex-col gap-5 justify-between">
                       <div className="flex sm:flex-row flex-col items-center justify-between gap-3">
                         <div className="flex sm:flex-row flex-col sm:items-center justify-between w-full">
                           <div>
@@ -3611,6 +3610,22 @@ export function PublicSaleSonarPage() {
                           </div>
                         )}
 
+                        {/* Eligibility status for the selected entity.
+                            Only KYC-verified, eligible entities can buy in the live sale. */}
+                        {!isPrivateSale &&
+                          isConnected &&
+                          sonar.configured &&
+                          sonar.authenticated && (
+                            <SonarStatusInline
+                              status={sonar.status}
+                              entity={sonar.activeEntity}
+                              onDisconnect={sonar.logout}
+                              loading={sonar.entitiesLoading}
+                              error={sonar.entitiesError}
+                              showEligible
+                            />
+                          )}
+
                         {/* CTA */}
                         <button
                           type="button"
@@ -3625,7 +3640,9 @@ export function PublicSaleSonarPage() {
                                     ? false
                                     : !isPrivateSale && needsSonarConnect
                                       ? !sonar.ready
-                                      : !isPrivateSale && needsSaleChainSwitch
+                                      : !isPrivateSale &&
+                                          (needsSaleChainSwitch ||
+                                            sonarNeedsSonarStep)
                                         ? false
                                         : !liveCanSubmit ||
                                           (isPrivateSale && privateSale.contributing)
@@ -3642,6 +3659,10 @@ export function PublicSaleSonarPage() {
                               }
                               if (needsSaleChainSwitch) {
                                 switchToSaleChain();
+                                return;
+                              }
+                              if (sonarNeedsSonarStep) {
+                                openSonar();
                                 return;
                               }
                               if (!liveCanSubmit) return;
@@ -3674,6 +3695,7 @@ export function PublicSaleSonarPage() {
                               isConnected &&
                               (needsSonarConnect ||
                                 needsSaleChainSwitch ||
+                                sonarNeedsSonarStep ||
                                 liveCanSubmit)) ||
                             (liveCanSubmit && !privateSale.contributing)
                               ? "bg-black text-white hover:bg-gray-800 active:scale-[0.99]"

@@ -412,6 +412,111 @@ export function SonarEntityStatusBanner({
   );
 }
 
+/**
+ * Compact in-flow Sonar status for the selected entity, rendered inside the
+ * purchase / whitelist form so the next step stays visible next to the CTA.
+ * Pass `showEligible` to also confirm eligibility.
+ */
+export function SonarStatusInline({
+  status,
+  entity,
+  onDisconnect,
+  loading,
+  error,
+  showEligible = false,
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50">
+        <Loader2 className="w-4 h-4 animate-spin text-indigo-600 flex-shrink-0" />
+        <p className="text-xs text-gray-600">Checking your Sonar status…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl border border-red-200 bg-red-50">
+        <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-gray-900">
+            Could not load your Sonar status
+          </p>
+          <p className="text-xs text-gray-600 mt-0.5 break-words">
+            {error.message || "Unknown error"}
+          </p>
+          {onDisconnect && (
+            <button
+              type="button"
+              onClick={onDisconnect}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-1.5"
+            >
+              Disconnect Sonar and retry
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (!status || (status.eligible && !showEligible)) return null;
+
+  const tone = TOAST_TONE_STYLES[status.tone] ? status.tone : "amber";
+  const StatusIcon = status.eligible
+    ? CheckCircle
+    : tone === "red"
+      ? AlertCircle
+      : Shield;
+  const needsSonarStep = status.needsSetup || !entity;
+
+  return (
+    <div
+      className={`flex items-start gap-2.5 px-3 py-2 rounded-xl border ${TOAST_TONE_STYLES[tone].box}`}
+    >
+      <StatusIcon
+        className={`w-4 h-4 flex-shrink-0 mt-0.5 ${TOAST_TONE_STYLES[tone].icon}`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-xs font-semibold text-gray-900">{status.title}</p>
+          {entity?.Label && (
+            <span
+              className="inline-flex max-w-[12rem] items-center rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-black/5"
+              title={`Sonar entity: ${entity.Label}`}
+            >
+              <span className="truncate">{entity.Label}</span>
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-3">
+            {needsSonarStep && (
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                title="Reload after finishing verification on Sonar"
+              >
+                Refresh status
+              </button>
+            )}
+            {onDisconnect && (
+              <button
+                type="button"
+                onClick={onDisconnect}
+                className="text-[11px] font-semibold text-gray-500 hover:text-gray-700"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+        {/* {!status.eligible && ( */}
+          <p className="text-xs text-gray-600 mt-0.5">{status.detail}</p>
+        {/* )} */}
+      </div>
+    </div>
+  );
+}
+
 const TOAST_TONE_STYLES = {
   red: {
     box: "border-red-200 bg-red-50",
