@@ -143,6 +143,8 @@ const partners = [
   { name: "Syndicate", icon: "syndicate.png" },
   { name: "Gate DEX", icon: "gate.svg" },
   { name: "Aspecta", icon: "aspecta.png" },
+  { name: "Sonar by Echo", icon: "echo.png" },
+
 ];
 
 // const SALE_DATE = new Date("2026-05-31T23:59:59Z");
