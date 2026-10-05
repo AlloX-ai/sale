@@ -29,6 +29,7 @@ import {
   UserPlus,
   DollarSign,
   HelpCircle,
+  RefreshCw,
 } from "lucide-react";
 import {
   PieChart,
@@ -195,7 +196,6 @@ const partners = [
   { name: "Gate DEX", icon: "gate.svg" },
   { name: "Aspecta", icon: "aspecta.png" },
   { name: "Sonar by Echo", icon: "echo.png" },
-
 ];
 
 // const SALE_DATE = new Date("2026-05-31T23:59:59Z");
@@ -974,10 +974,10 @@ export function PublicSaleSonarPage() {
     statusLoading: wlStatusLoading,
     submit: submitWhitelist,
     linkSonar: linkWhitelistSonar,
+    refresh: refreshWhitelist,
     submitting: wlSubmitting,
     retrying: wlRetrying,
   } = usePublicSaleWhitelist();
-
   const privateSale = usePrivateSale({ enabled: liveSaleKind === "private" });
   const { isAuthenticated, ensureAuthenticated } = useAuth();
   const sonar = useSonarPublicSaleAccess(
@@ -1005,6 +1005,19 @@ export function PublicSaleSonarPage() {
     : [];
   const isRegistered = wlStatus?.registered === true;
   const registration = wlStatus?.registration ?? null;
+
+  // The wallet the backend actually read the balance for. If it differs from
+  // the connected wallet, the user is signed in as a different account than the
+  // one holding the funds, so we surface a "sign in with that wallet" notice
+  // instead of a confusing $0/low balance.
+  const checkedAddress = wlStatus?.checkedAddress ?? null;
+  const balanceAddressMismatch =
+    checkedAddress != null &&
+    walletAddress != null &&
+    checkedAddress.toLowerCase() !== walletAddress.toLowerCase();
+  // A chain read failed on the backend: walletBalanceUsd is partial/unreliable,
+  // so we must not render it as a real $0 — show a retry instead.
+  const balanceIncomplete = wlStatus?.balanceIncomplete === true;
 
   const getData = async () => {
     try {
@@ -2138,7 +2151,9 @@ export function PublicSaleSonarPage() {
                                 : "The Community Sale"}
                               <br />
                               <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                                {saleOpen ? "Community Sale Whitelist" : "Whitelist"}
+                                {saleOpen
+                                  ? "Community Sale Whitelist"
+                                  : "Whitelist"}
                               </span>
                             </h1>
                             {saleOpen && (
@@ -2147,8 +2162,8 @@ export function PublicSaleSonarPage() {
                                 <span className="font-semibold text-gray-900">
                                   open right now
                                 </span>
-                                . Register before the countdown ends so
-                                you're ready to commit when the sale starts.
+                                . Register before the countdown ends so you're
+                                ready to commit when the sale starts.
                               </p>
                             )}
                           </div>
@@ -2476,18 +2491,33 @@ export function PublicSaleSonarPage() {
                                         className="text-sm text-gray-600 hover:text-gray-800 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5 flex items-center gap-2 hover:bg-blue-100 transition-colors"
                                       >
                                         Wallet balance:{" "}
-                                        <span className="font-bold text-base text-gray-900">
+                                        <span
+                                          className={`font-bold text-base ${
+                                            balanceIncomplete
+                                              ? "text-amber-600"
+                                              : "text-gray-900"
+                                          }`}
+                                        >
                                           {wlStatusLoading &&
                                           walletBalanceUsd == null
                                             ? "Loading…"
-                                            : walletBalanceUsd != null
-                                              ? `$${walletBalanceUsd.toLocaleString(
-                                                  undefined,
-                                                  { maximumFractionDigits: 2 },
-                                                )}`
-                                              : "—"}
+                                            : balanceIncomplete
+                                              ? "Couldn't read"
+                                              : walletBalanceUsd != null
+                                                ? `$${walletBalanceUsd.toLocaleString(
+                                                    undefined,
+                                                    {
+                                                      maximumFractionDigits: 2,
+                                                    },
+                                                  )}`
+                                                : "—"}
                                         </span>
-                                        <Info className="w-4 h-4 text-blue-500" />
+                                        {balanceIncomplete ||
+                                        balanceAddressMismatch ? (
+                                          <AlertCircle className="w-4 h-4 text-amber-500" />
+                                        ) : (
+                                          <Info className="w-4 h-4 text-blue-500" />
+                                        )}
                                       </button>
 
                                       <AnimatePresence>
@@ -2516,19 +2546,71 @@ export function PublicSaleSonarPage() {
                                                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                                                   Balance Breakdown
                                                 </span>
-                                                {walletBalanceUsd != null && (
-                                                  <span className="text-xs font-bold text-gray-800">
-                                                    $
-                                                    {walletBalanceUsd.toLocaleString(
-                                                      undefined,
-                                                      {
-                                                        maximumFractionDigits: 2,
-                                                      },
-                                                    )}
-                                                  </span>
-                                                )}
+                                                {!balanceIncomplete &&
+                                                  walletBalanceUsd != null && (
+                                                    <span className="text-xs font-bold text-gray-800">
+                                                      $
+                                                      {walletBalanceUsd.toLocaleString(
+                                                        undefined,
+                                                        {
+                                                          maximumFractionDigits: 2,
+                                                        },
+                                                      )}
+                                                    </span>
+                                                  )}
                                               </div>
-                                              {balanceBreakdown.length > 0 ? (
+
+                                              {/* Signed in as a different wallet than the one we read */}
+                                              {balanceAddressMismatch && (
+                                                <div className="flex items-start gap-2 mb-2.5 p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                                                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                                                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                                                    We checked{" "}
+                                                    <span className="font-semibold">
+                                                      {shortenTxHash(
+                                                        checkedAddress,
+                                                      )}
+                                                    </span>
+                                                    , which isn't the wallet
+                                                    you're connected with. Sign
+                                                    in with the wallet that
+                                                    holds your funds to see the
+                                                    right balance.
+                                                  </p>
+                                                </div>
+                                              )}
+
+                                              {balanceIncomplete ? (
+                                                /* A chain read failed — never show this as a real $0 */
+                                                <div className="flex flex-col gap-2 mb-2.5 p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                                                  <div className="flex items-start gap-2">
+                                                    <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                                                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                                                      Could not read balance, try
+                                                      again.
+                                                    </p>
+                                                  </div>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      refreshWhitelist()
+                                                    }
+                                                    disabled={wlStatusLoading}
+                                                    className="self-start inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                  >
+                                                    <RefreshCw
+                                                      className={`w-3 h-3 ${
+                                                        wlStatusLoading
+                                                          ? "animate-spin"
+                                                          : ""
+                                                      }`}
+                                                    />
+                                                    {wlStatusLoading
+                                                      ? "Retrying…"
+                                                      : "Retry"}
+                                                  </button>
+                                                </div>
+                                              ) : balanceBreakdown.length > 0 ? (
                                                 <div className="space-y-1.5 mb-2.5">
                                                   {balanceBreakdown.map(
                                                     (row, i) => (
@@ -2563,6 +2645,21 @@ export function PublicSaleSonarPage() {
                                                   your wallet yet.
                                                 </p>
                                               )}
+
+                                              {/* The wallet the backend actually read */}
+                                              {checkedAddress && (
+                                                <div className="flex items-center justify-between text-[11px] pt-2 border-t border-gray-100">
+                                                  <span className="text-gray-400">
+                                                    Checked wallet
+                                                  </span>
+                                                  <span className="font-mono font-semibold text-gray-600">
+                                                    {shortenTxHash(
+                                                      checkedAddress,
+                                                    )}
+                                                  </span>
+                                                </div>
+                                              )}
+
                                               <p className="text-[11px] text-gray-400 leading-relaxed pt-2 border-t border-gray-100">
                                                 Balance counts USDC and USDT on
                                                 Ethereum only (the public sale
