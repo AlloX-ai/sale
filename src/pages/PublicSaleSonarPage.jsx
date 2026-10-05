@@ -143,6 +143,8 @@ const partners = [
   { name: "Syndicate", icon: "syndicate.png" },
   { name: "Gate DEX", icon: "gate.svg" },
   { name: "Aspecta", icon: "aspecta.png" },
+  { name: "Sonar by Echo", icon: "echo.png" },
+
 ];
 
 // const SALE_DATE = new Date("2026-05-31T23:59:59Z");
@@ -451,6 +453,7 @@ const DEX_VOLUME = [
   { week: "01 Sep", value: 92300000, label: "$92.3M" },
   { week: "15 Sep", value: 98600000, label: "$98.6M" },
   { week: "29 Sep", value: 121150000, label: "$121.15M" },
+  { week: "05 Oct", value: 149300000, label: "$149.3M" },
 ];
 
 const PUBLIC_SALE_STEPS = [
@@ -521,7 +524,7 @@ const PRIVATE_SALE_STEPS = [
 
 const SALE_MOMENTUM_HIGHLIGHTS = [
   {
-    value: "$0.6M+",
+    value: "$0.7M+",
     label: "Revenue",
     detail: "Platform revenue generated to date",
     accent: "#818cf8",
@@ -533,7 +536,7 @@ const SALE_MOMENTUM_HIGHLIGHTS = [
     accent: "#2dd4bf",
   },
   {
-    value: "$125.91M",
+    value: "$149.3M",
     label: "Cumulative DEX Aggregator Volume",
     detail: "Cumulative trading & on-chain volume",
     accent: "#fbbf24",
@@ -579,9 +582,9 @@ const KEY_MILESTONES = [
     status: "completed",
   },
   {
-    title: "$125.91M Volume Reached",
-    metric: "$125.91M",
-    desc: "Crossed $125.91M in cumulative DEX Aggregator volume across 312,000 on-chain portfolios created in 30 days.",
+    title: "$149.3M Volume Reached",
+    metric: "$149.3M",
+    desc: "Crossed $149.3M in cumulative DEX Aggregator volume across 312,000 on-chain portfolios created in 30 days.",
     status: "completed",
   },
   {
@@ -630,7 +633,12 @@ const sanitizeUsdInput = (raw, max) => {
   let v = raw.replace(/,/g, "").replace(/[^\d.]/g, "");
   const dot = v.indexOf(".");
   if (dot !== -1) {
-    v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+    v =
+      v.slice(0, dot + 1) +
+      v
+        .slice(dot + 1)
+        .replace(/\./g, "")
+        .slice(0, 2);
   }
   v = v.replace(/^0+(?=\d)/, "");
   if (v !== "" && v !== "." && parseFloat(v) > max) return String(max);
@@ -890,8 +898,7 @@ export function PublicSaleSonarPage() {
   const isSolanaWallet = walletType === "solana";
   const currentEvmChainId = isSolanaWallet ? null : (wagmiChainId ?? chainId);
   const isOnSaleChain = currentEvmChainId === PUBLIC_SALE_CHAIN_ID;
-  const needsSaleChainSwitch =
-    isConnected && !isSolanaWallet && !isOnSaleChain;
+  const needsSaleChainSwitch = isConnected && !isSolanaWallet && !isOnSaleChain;
 
   const switchToSaleChain = async () => {
     if (!switchChain.mutateAsync) {
@@ -1230,7 +1237,9 @@ export function PublicSaleSonarPage() {
 
   const WL_PRESETS = ["$100", "$500", "$1,000", "$5,000", "$10,000"];
   const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
-  const liveMinUsd = isPrivateSale ? privateSale.minContributionUsd : WL_MIN_USD;
+  const liveMinUsd = isPrivateSale
+    ? privateSale.minContributionUsd
+    : WL_MIN_USD;
   const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
   const publicLiveSonarReady =
     !sonar.configured ||
@@ -1513,16 +1522,22 @@ export function PublicSaleSonarPage() {
                               </span>
                             )} */}
                             {meta.mica && (
-                              <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white border border-gray-200 shadow-sm">
-                                <img
-                                  src={esmaLogo}
-                                  alt="ESMA"
-                                  className="h-3 w-auto object-contain"
-                                />
-                                <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
-                                  MiCA Regulated
-                                </span>
-                              </div>
+                              <Link
+                                to="https://allox.ai/mica-whitepaper"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white border border-gray-200 shadow-sm">
+                                  <img
+                                    src={esmaLogo}
+                                    alt="ESMA"
+                                    className="h-3 w-auto object-contain"
+                                  />
+                                  <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
+                                    MiCA Regulated
+                                  </span>
+                                </div>
+                              </Link>
                             )}
                           </div>
                           <div className="mt-2 space-y-0.5">
@@ -1565,139 +1580,178 @@ export function PublicSaleSonarPage() {
                                 style={{ filter: "invert(1) brightness(1.4)" }}
                               />
                               <span className="h-3.5 w-px bg-gray-300" />
-                              {sonar.entities && sonar.entities.length > 0 ? (() => {
-                                const currentEntity = sonar.activeEntity ?? sonar.entities[0];
-                                const canSwitch = sonar.entities.length > 1;
-                                const shieldColor = sonar.entitiesLoading
-                                  ? "text-gray-400"
-                                  : sonar.status?.eligible
-                                    ? "text-emerald-600"
-                                    : sonar.status?.tone === "red"
-                                      ? "text-red-600"
-                                      : "text-amber-500";
-                                return (
-                                  <>
-                                    {/* span, not button: the banner itself is a <button> */}
-                                    <span
-                                      ref={entityTriggerRef}
-                                      role="button"
-                                      tabIndex={canSwitch ? 0 : -1}
-                                      aria-haspopup="listbox"
-                                      aria-expanded={entityMenuOpen}
-                                      aria-disabled={!canSwitch}
-                                      title={canSwitch ? "Select entity" : "Entity"}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (canSwitch) toggleEntityMenu();
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (canSwitch && (e.key === "Enter" || e.key === " ")) {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          toggleEntityMenu();
-                                        }
-                                      }}
-                                      className={`inline-flex items-center gap-1.5 rounded-full bg-emerald-50 py-1 pl-2 pr-1 ring-1 ring-emerald-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
-                                        canSwitch ? "cursor-pointer hover:bg-emerald-100" : "cursor-default"
-                                      }`}
-                                    >
-                                      <Shield className={`h-3.5 w-3.5 ${shieldColor}`} />
-                                      <span className="max-w-[140px] truncate text-[11px] font-semibold text-emerald-900">
-                                        {currentEntity?.Label || "Unnamed Entity"}
-                                      </span>
+                              {sonar.entities && sonar.entities.length > 0 ? (
+                                (() => {
+                                  const currentEntity =
+                                    sonar.activeEntity ?? sonar.entities[0];
+                                  const canSwitch = sonar.entities.length > 1;
+                                  const shieldColor = sonar.entitiesLoading
+                                    ? "text-gray-400"
+                                    : sonar.status?.eligible
+                                      ? "text-emerald-600"
+                                      : sonar.status?.tone === "red"
+                                        ? "text-red-600"
+                                        : "text-amber-500";
+                                  return (
+                                    <>
+                                      {/* span, not button: the banner itself is a <button> */}
                                       <span
-                                        className={`inline-flex items-center justify-center rounded-full p-0.5 ${
-                                          canSwitch ? "bg-emerald-600" : "bg-emerald-300"
+                                        ref={entityTriggerRef}
+                                        role="button"
+                                        tabIndex={canSwitch ? 0 : -1}
+                                        aria-haspopup="listbox"
+                                        aria-expanded={entityMenuOpen}
+                                        aria-disabled={!canSwitch}
+                                        title={
+                                          canSwitch ? "Select entity" : "Entity"
+                                        }
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (canSwitch) toggleEntityMenu();
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (
+                                            canSwitch &&
+                                            (e.key === "Enter" || e.key === " ")
+                                          ) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            toggleEntityMenu();
+                                          }
+                                        }}
+                                        className={`inline-flex items-center gap-1.5 rounded-full bg-emerald-50 py-1 pl-2 pr-1 ring-1 ring-emerald-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                                          canSwitch
+                                            ? "cursor-pointer hover:bg-emerald-100"
+                                            : "cursor-default"
                                         }`}
                                       >
-                                        <ChevronDown
-                                          className={`h-3 w-3 text-white transition-transform ${entityMenuOpen ? "rotate-180" : ""}`}
-                                          strokeWidth={3}
+                                        <Shield
+                                          className={`h-3.5 w-3.5 ${shieldColor}`}
                                         />
-                                      </span>
-                                    </span>
-
-                                    {entityMenuOpen &&
-                                      createPortal(
-                                        <>
-                                          <div
-                                            className="fixed inset-0 z-[60]"
-                                            onClick={() => setEntityMenuPos(null)}
+                                        <span className="max-w-[140px] truncate text-[11px] font-semibold text-emerald-900">
+                                          {currentEntity?.Label ||
+                                            "Unnamed Entity"}
+                                        </span>
+                                        <span
+                                          className={`inline-flex items-center justify-center rounded-full p-0.5 ${
+                                            canSwitch
+                                              ? "bg-emerald-600"
+                                              : "bg-emerald-300"
+                                          }`}
+                                        >
+                                          <ChevronDown
+                                            className={`h-3 w-3 text-white transition-transform ${entityMenuOpen ? "rotate-180" : ""}`}
+                                            strokeWidth={3}
                                           />
-                                          <div
-                                            role="listbox"
-                                            className="fixed z-[61] min-w-[180px] max-w-[260px] rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg animate-fade-in"
-                                            style={{ top: entityMenuPos.top, right: entityMenuPos.right }}
-                                          >
-                                            <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                                              Entity
-                                            </p>
-                                            {sonar.entities.map((entity) => {
-                                              const isSelected = entity.EntityID === currentEntity?.EntityID;
-                                              const label = entity.Label || "Unnamed Entity";
-                                              const entityStatus = describeSonarEntity(entity, saleState);
-                                              return (
-                                                <button
-                                                  key={entity.EntityID}
-                                                  type="button"
-                                                  role="option"
-                                                  aria-selected={isSelected}
-                                                  onClick={() => {
-                                                    setSelectedEntity(entity);
-                                                    setEntityMenuPos(null);
-                                                  }}
-                                                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors ${
-                                                    isSelected
-                                                      ? "bg-black font-medium text-white hover:bg-gray-800"
-                                                      : "text-gray-800 hover:bg-black/5"
-                                                  }`}
-                                                >
-                                                  <span
-                                                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                                                      isSelected ? "bg-white text-black" : "bg-emerald-100 text-emerald-700"
+                                        </span>
+                                      </span>
+
+                                      {entityMenuOpen &&
+                                        createPortal(
+                                          <>
+                                            <div
+                                              className="fixed inset-0 z-[60]"
+                                              onClick={() =>
+                                                setEntityMenuPos(null)
+                                              }
+                                            />
+                                            <div
+                                              role="listbox"
+                                              className="fixed z-[61] min-w-[180px] max-w-[260px] rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg animate-fade-in"
+                                              style={{
+                                                top: entityMenuPos.top,
+                                                right: entityMenuPos.right,
+                                              }}
+                                            >
+                                              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                                Entity
+                                              </p>
+                                              {sonar.entities.map((entity) => {
+                                                const isSelected =
+                                                  entity.EntityID ===
+                                                  currentEntity?.EntityID;
+                                                const label =
+                                                  entity.Label ||
+                                                  "Unnamed Entity";
+                                                const entityStatus =
+                                                  describeSonarEntity(
+                                                    entity,
+                                                    saleState,
+                                                  );
+                                                return (
+                                                  <button
+                                                    key={entity.EntityID}
+                                                    type="button"
+                                                    role="option"
+                                                    aria-selected={isSelected}
+                                                    onClick={() => {
+                                                      setSelectedEntity(entity);
+                                                      setEntityMenuPos(null);
+                                                    }}
+                                                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors ${
+                                                      isSelected
+                                                        ? "bg-black font-medium text-white hover:bg-gray-800"
+                                                        : "text-gray-800 hover:bg-black/5"
                                                     }`}
                                                   >
-                                                    {label.charAt(0).toUpperCase()}
-                                                  </span>
-                                                  <span className="min-w-0 flex-1">
-                                                    <span className="block truncate">{label}</span>
                                                     <span
-                                                      className={`block truncate text-[10px] font-medium ${
+                                                      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                                                         isSelected
-                                                          ? "text-white/70"
-                                                          : entityStatus.eligible
-                                                            ? "text-emerald-600"
-                                                            : entityStatus.tone === "red"
-                                                              ? "text-red-600"
-                                                              : "text-amber-600"
+                                                          ? "bg-white text-black"
+                                                          : "bg-emerald-100 text-emerald-700"
                                                       }`}
                                                     >
-                                                      {entityStatus.eligible ? "Eligible" : entityStatus.title}
+                                                      {label
+                                                        .charAt(0)
+                                                        .toUpperCase()}
                                                     </span>
-                                                  </span>
-                                                  {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                                                </button>
-                                              );
-                                            })}
-                                            <div className="my-1.5 w-full border-t border-gray-200/50" />
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setEntityMenuPos(null);
-                                                sonar.logout();
-                                              }}
-                                              className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-medium text-[#F54900] transition-colors hover:bg-orange-100"
-                                            >
-                                              <LogOut className="h-3.5 w-3.5" />
-                                              Disconnect Sonar
-                                            </button>
-                                          </div>
-                                        </>,
-                                        document.body,
-                                      )}
-                                  </>
-                                );
-                              })() : (
+                                                    <span className="min-w-0 flex-1">
+                                                      <span className="block truncate">
+                                                        {label}
+                                                      </span>
+                                                      <span
+                                                        className={`block truncate text-[10px] font-medium ${
+                                                          isSelected
+                                                            ? "text-white/70"
+                                                            : entityStatus.eligible
+                                                              ? "text-emerald-600"
+                                                              : entityStatus.tone ===
+                                                                  "red"
+                                                                ? "text-red-600"
+                                                                : "text-amber-600"
+                                                        }`}
+                                                      >
+                                                        {entityStatus.eligible
+                                                          ? "Eligible"
+                                                          : entityStatus.title}
+                                                      </span>
+                                                    </span>
+                                                    {isSelected && (
+                                                      <Check className="h-3.5 w-3.5 shrink-0" />
+                                                    )}
+                                                  </button>
+                                                );
+                                              })}
+                                              <div className="my-1.5 w-full border-t border-gray-200/50" />
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEntityMenuPos(null);
+                                                  sonar.logout();
+                                                }}
+                                                className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-medium text-[#F54900] transition-colors hover:bg-orange-100"
+                                              >
+                                                <LogOut className="h-3.5 w-3.5" />
+                                                Disconnect Sonar
+                                              </button>
+                                            </div>
+                                          </>,
+                                          document.body,
+                                        )}
+                                    </>
+                                  );
+                                })()
+                              ) : (
                                 <span className="inline-flex items-center gap-1 pl-0.5 text-[11px] font-semibold text-gray-800">
                                   <Shield className="h-3.5 w-3.5 text-emerald-600" />
                                   {sonar.primaryEntity?.Label || "Connected"}
@@ -1812,17 +1866,18 @@ export function PublicSaleSonarPage() {
                                   window.open(
                                     getSonarHomeUrl(),
                                     "_blank",
-                                    "noopener,noreferrer"
+                                    "noopener,noreferrer",
                                   )
                                 }
                                 className="ml-2 text-white/70 hover:text-white transition-colors hover:border-b-2 flex items-end gap-1.5 border-b-2 border-transparent hover:border-white/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
                                 title="View on Sonar"
-                              >   <img
-                                src={meta.logo}
-                                alt="SONAR by ECHO"
-                                className="h-7 sm:h-5 w-auto max-w-[100px] sm:max-w-[140px] object-contain object-right drop-shadow opacity-100"
-                              />
-                           
+                              >
+                                {" "}
+                                <img
+                                  src={meta.logo}
+                                  alt="SONAR by ECHO"
+                                  className="h-7 sm:h-5 w-auto max-w-[100px] sm:max-w-[140px] object-contain object-right drop-shadow opacity-100"
+                                />
                                 <ExternalLink className="w-4 h-4" />
                               </button>
                             </div>
@@ -2443,13 +2498,20 @@ export function PublicSaleSonarPage() {
                                     value={wlAmount}
                                     onChange={(e) => {
                                       setWlAmount(
-                                        sanitizeUsdInput(e.target.value, maxUsd),
+                                        sanitizeUsdInput(
+                                          e.target.value,
+                                          maxUsd,
+                                        ),
                                       );
                                       setSubmitError(null);
                                     }}
                                     disabled={!saleOpen}
                                     placeholder={`$${minUsd.toLocaleString()} – $${maxUsd.toLocaleString()}`}
-                                    aria-invalid={belowMin || aboveMax || insufficientBalance}
+                                    aria-invalid={
+                                      belowMin ||
+                                      aboveMax ||
+                                      insufficientBalance
+                                    }
                                     className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:outline-none text-sm font-semibold bg-white/80 transition-colors disabled:opacity-50 ${insufficientBalance || belowMin || aboveMax ? "border-red-300 focus:border-red-500" : "border-gray-200 focus:border-black"}`}
                                   />
                                 </div>
@@ -2556,9 +2618,10 @@ export function PublicSaleSonarPage() {
                                 <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                                   <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <p className="text-xs text-amber-800">
-                                    Switch your wallet to Ethereum to verify balance
-                                    and {isRegistered ? "update" : "reserve"}{" "}
-                                    your allocation.
+                                    Switch your wallet to Ethereum to verify
+                                    balance and{" "}
+                                    {isRegistered ? "update" : "reserve"} your
+                                    allocation.
                                   </p>
                                 </div>
                               )}
@@ -2667,16 +2730,16 @@ export function PublicSaleSonarPage() {
                                   sonarBlockedLabel
                                 ) : needsSaleChainSwitch ? (
                                   `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
+                                ) : belowMin ? (
+                                  `Minimum $${minUsd.toLocaleString()} required`
+                                ) : aboveMax ? (
+                                  `Maximum $${maxUsd.toLocaleString()} allowed`
+                                ) : insufficientBalance ? (
+                                  "Insufficient Balance"
+                                ) : isRegistered ? (
+                                  "Update Allocation"
                                 ) : (
-                                  belowMin
-                                    ? `Minimum $${minUsd.toLocaleString()} required`
-                                    : aboveMax
-                                      ? `Maximum $${maxUsd.toLocaleString()} allowed`
-                                      : insufficientBalance
-                                        ? "Insufficient Balance"
-                                        : isRegistered
-                                          ? "Update Allocation"
-                                          : "Join Whitelist"
+                                  "Join Whitelist"
                                 )}
                               </button>
                             </div>
@@ -3633,7 +3696,9 @@ export function PublicSaleSonarPage() {
                               ? true
                               : isPrivateSale && !isConnected
                                 ? false
-                                : isPrivateSale && isConnected && !isAuthenticated
+                                : isPrivateSale &&
+                                    isConnected &&
+                                    !isAuthenticated
                                   ? false
                                   : !isPrivateSale && !isConnected
                                     ? false
@@ -3644,7 +3709,8 @@ export function PublicSaleSonarPage() {
                                             sonarNeedsSonarStep)
                                         ? false
                                         : !liveCanSubmit ||
-                                          (isPrivateSale && privateSale.contributing)
+                                          (isPrivateSale &&
+                                            privateSale.contributing)
                           }
                           onClick={() => {
                             if (!isPrivateSale) {
@@ -3706,46 +3772,46 @@ export function PublicSaleSonarPage() {
                             : !isPrivateSale && publicPurchase.busy
                               ? PURCHASE_STEP_LABELS[publicPurchase.step] ||
                                 "Processing…"
-                            : isPrivateSale && !isConnected
-                              ? "Connect Wallet"
-                              : isPrivateSale && !isAuthenticated
-                                ? "Sign In"
-                                : !isPrivateSale && !isConnected
-                                  ? "Connect Wallet"
-                                  : !isPrivateSale && needsSonarConnect
-                                    ? "Connect with Sonar"
-                                    : !isPrivateSale && needsSaleChainSwitch
-                                      ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
-                                      : !isPrivateSale && sonarBlockedLabel
-                                        ? sonarBlockedLabel
-                                        : !isPrivateSale &&
-                                            publicPurchase.saleInfo?.paused
-                                          ? "Sale paused"
-                                        : !isPrivateSale &&
-                                            liveNum > 0 &&
-                                            liveInsufficientBalance
-                                          ? `Insufficient ${liveAsset} balance`
-                                        : isPrivateSale &&
-                                            privateSale.eligibilityLoading
-                                          ? "Checking eligibility…"
-                                          : isPrivateSale &&
-                                              !privateSale.isEligible
-                                            ? "Not eligible"
-                                            : isPrivateSale &&
-                                                !privateSale.saleActive
-                                              ? privateSale.saleEnded
-                                                ? "Sale Ended"
-                                                : "Sale Not Active"
+                              : isPrivateSale && !isConnected
+                                ? "Connect Wallet"
+                                : isPrivateSale && !isAuthenticated
+                                  ? "Sign In"
+                                  : !isPrivateSale && !isConnected
+                                    ? "Connect Wallet"
+                                    : !isPrivateSale && needsSonarConnect
+                                      ? "Connect with Sonar"
+                                      : !isPrivateSale && needsSaleChainSwitch
+                                        ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
+                                        : !isPrivateSale && sonarBlockedLabel
+                                          ? sonarBlockedLabel
+                                          : !isPrivateSale &&
+                                              publicPurchase.saleInfo?.paused
+                                            ? "Sale paused"
+                                            : !isPrivateSale &&
+                                                liveNum > 0 &&
+                                                liveInsufficientBalance
+                                              ? `Insufficient ${liveAsset} balance`
                                               : isPrivateSale &&
-                                                  !privateSale.isSelectedTierEligible
-                                                ? "Tier not available"
-                                                : liveNum <= 0
-                                                  ? "Enter Amount"
-                                                  : liveNum < liveMinUsd
-                                                    ? `Minimum is $${liveMinUsd.toLocaleString()}`
-                                                    : liveNum > liveMaxUsd
-                                                      ? "Amount exceeds maximum"
-                                                      : "Invest"}
+                                                  privateSale.eligibilityLoading
+                                                ? "Checking eligibility…"
+                                                : isPrivateSale &&
+                                                    !privateSale.isEligible
+                                                  ? "Not eligible"
+                                                  : isPrivateSale &&
+                                                      !privateSale.saleActive
+                                                    ? privateSale.saleEnded
+                                                      ? "Sale Ended"
+                                                      : "Sale Not Active"
+                                                    : isPrivateSale &&
+                                                        !privateSale.isSelectedTierEligible
+                                                      ? "Tier not available"
+                                                      : liveNum <= 0
+                                                        ? "Enter Amount"
+                                                        : liveNum < liveMinUsd
+                                                          ? `Minimum is $${liveMinUsd.toLocaleString()}`
+                                                          : liveNum > liveMaxUsd
+                                                            ? "Amount exceeds maximum"
+                                                            : "Invest"}
                         </button>
                       </>
                     </div>
@@ -3825,7 +3891,9 @@ export function PublicSaleSonarPage() {
                                           ? CHAIN_EXPLORERS[chainKey] ||
                                             CHAIN_EXPLORERS.BSC
                                           : TX_EXPLORERS[inv.network] ||
-                                            TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME];
+                                            TX_EXPLORERS[
+                                              PUBLIC_SALE_CHAIN_NAME
+                                            ];
                                         const token = String(
                                           inv.token || "",
                                         ).toUpperCase();
@@ -4005,30 +4073,29 @@ export function PublicSaleSonarPage() {
                             </p>
                           )}
                         {hasPosition && liveNum > 0 && (
-                            <p className="text-xs text-gray-500 mt-1.5">
-                              {isPrivateSale
-                                ? `Current ${livePlan?.name || "tier"} position:`
-                                : "Current commitment:"}{" "}
-                              <span className="font-semibold text-gray-800">
-                                {formatCompactNumber(positionTokens)}{" "}
-                                ALLOX
-                              </span>
-                              {" · "}
-                              <span className="font-semibold text-gray-800">
-                                $
-                                {positionUsd.toLocaleString(undefined, {
-                                  maximumFractionDigits: 2,
-                                })}{" "}
-                                contributed
-                              </span>
-                            </p>
-                          )}
+                          <p className="text-xs text-gray-500 mt-1.5">
+                            {isPrivateSale
+                              ? `Current ${livePlan?.name || "tier"} position:`
+                              : "Current commitment:"}{" "}
+                            <span className="font-semibold text-gray-800">
+                              {formatCompactNumber(positionTokens)} ALLOX
+                            </span>
+                            {" · "}
+                            <span className="font-semibold text-gray-800">
+                              $
+                              {positionUsd.toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              contributed
+                            </span>
+                          </p>
+                        )}
                         {positionTokens > 0 && liveNum > 0 && (
-                            <p className="text-xs text-indigo-600 mt-1.5 font-medium">
-                              + {formatCompactNumber(liveTokensRaw)} ALLOX from
-                              current entry
-                            </p>
-                          )}
+                          <p className="text-xs text-indigo-600 mt-1.5 font-medium">
+                            + {formatCompactNumber(liveTokensRaw)} ALLOX from
+                            current entry
+                          </p>
+                        )}
                         {isPrivateSale &&
                           (Number(privateSale.position?.pendingCount) || 0) >
                             0 && (
@@ -5443,7 +5510,7 @@ export function PublicSaleSonarPage() {
                     DEX Aggregator Volume
                   </div>
                   <div className="text-sm font-semibold text-white mt-0.5">
-                    May – Sept 2026 · Source: DefiLlama
+                    May – Oct 2026 · Source: DefiLlama
                   </div>
                 </div>
                 <a
