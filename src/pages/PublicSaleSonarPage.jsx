@@ -73,9 +73,17 @@ import {
 import { getSonarHomeUrl } from "../config/sonar";
 import esmaLogo from "../assets/ESMALogo.png";
 
-const renderer = ({ days, hours, minutes, seconds }) => {
+const renderer = ({ days, hours, minutes, seconds, completed }) => {
+  if (completed) {
+    return (
+      <div className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-green-50 border border-green-200 text-green-700 font-bold">
+        <span className="w-2 h-2 rounded-full bg-green-500" />
+        Commitments are now open
+      </div>
+    );
+  }
   return (
-    <div className="grid grid-cols-4 gap-4 md:gap-8 max-w-4xl mx-auto mt-12">
+    <div className="grid grid-cols-4 gap-4 md:gap-8 max-w-4xl mx-auto">
       {/* Days */}
       <div className="glass-card-desktop p-0 md:p-6 group hover:scale-105 transition-all duration-300 hover:shadow-2xl">
         <div className="text-3xl md:text-5xl lg:text-5xl font-bold bg-gradient-to-br from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2 md:mb-4">
@@ -118,6 +126,49 @@ const renderer = ({ days, hours, minutes, seconds }) => {
     </div>
   );
 };
+
+const WHITELIST_STEPS = [
+  { title: "Connect wallet", desc: "Link the wallet you'll buy with." },
+  { title: "Verify & register", desc: "Complete KYC and reserve your amount." },
+  { title: "Commit at launch", desc: "Buy ALLOX when commitments open." },
+];
+
+const WhitelistSteps = ({ current }) => (
+  <ol className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl mb-8 text-left">
+    {WHITELIST_STEPS.map((s, i) => {
+      const done = i < current;
+      const active = i === current;
+      return (
+        <li
+          key={s.title}
+          className={`flex items-start gap-3 rounded-xl border px-3 py-3 ${
+            active
+              ? "border-black bg-white shadow-sm"
+              : "border-gray-200 bg-white/50"
+          }`}
+        >
+          <span
+            className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+              done
+                ? "bg-green-500 text-white"
+                : active
+                  ? "bg-black text-white"
+                  : "bg-gray-200 text-gray-500"
+            }`}
+          >
+            {done ? "✓" : i + 1}
+          </span>
+          <span>
+            <span className="block text-sm font-semibold text-gray-900">
+              {s.title}
+            </span>
+            <span className="block text-xs text-gray-500">{s.desc}</span>
+          </span>
+        </li>
+      );
+    })}
+  </ol>
+);
 
 const partners = [
   { name: "BNB Chain", icon: "bnbChain.svg" },
@@ -718,7 +769,7 @@ function formatCompactNumber(value) {
   return `${sign}${abs.toLocaleString()}`;
 }
 
-const SALE_DATE = new Date("2026-10-12T23:59:59Z");
+const SALE_DATE = new Date("2026-10-12T11:59:59Z");
 const LIVE_SALE_END = new Date("2026-09-01T23:59:59Z");
 const LIVE_TOTAL_COMMITTED = 1_503_842;
 const LIVE_ASSET_LOGOS = {
@@ -2060,35 +2111,85 @@ export function PublicSaleSonarPage() {
                       <div className="max-w-[1200px] mx-auto relative">
                         <div className="text-center space-y-8">
                           {/* Badge */}
+                          {saleOpen ? (
+                            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-100 border border-green-200">
+                              <span className="relative flex w-2.5 h-2.5">
+                                <span className="absolute inline-flex w-full h-full rounded-full bg-green-500 opacity-75 animate-ping" />
+                                <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-green-500" />
+                              </span>
+                              <span className="text-xs md:text-sm font-bold uppercase tracking-wider text-green-700">
+                                Live now · Whitelist registration open
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gray-100 border border-gray-200">
+                              <span className="w-2.5 h-2.5 rounded-full bg-gray-400" />
+                              <span className="text-xs md:text-sm font-bold uppercase tracking-wider text-gray-600">
+                                Whitelist registration closed
+                              </span>
+                            </div>
+                          )}
 
                           {/* Main Heading */}
-                          <h1 className="text-3xl md:text-5xl lg:text-5xl leading-tight tracking-tight animate-fade-in">
-                            Join the Community Sale
-                            <br />
-                            <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                              Whitelist
-                            </span>
-                          </h1>
+                          <div className="space-y-4">
+                            <h1 className="text-3xl md:text-5xl lg:text-5xl leading-tight tracking-tight animate-fade-in">
+                              {saleOpen
+                                ? "Register Now for the"
+                                : "The Community Sale"}
+                              <br />
+                              <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                                {saleOpen ? "Community Sale Whitelist" : "Whitelist"}
+                              </span>
+                            </h1>
+                            {saleOpen && (
+                              <p className="text-sm md:text-base text-gray-600 max-w-xl mx-auto">
+                                Whitelist registration is{" "}
+                                <span className="font-semibold text-gray-900">
+                                  open right now
+                                </span>
+                                . Register before the countdown ends so
+                                you're ready to commit when the sale starts.
+                              </p>
+                            )}
+                          </div>
 
                           {/* Countdown Timer */}
-                          <Countdown date={SALE_DATE} renderer={renderer} />
+                          <div className="space-y-4">
+                            <p className="text-xs md:text-sm font-bold uppercase tracking-[0.2em] text-gray-500">
+                              Commitments open in
+                            </p>
+                            <Countdown date={SALE_DATE} renderer={renderer} />
+                            {/* <p className="text-xs text-gray-500">
+                              {SALE_DATE.toLocaleString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                timeZone: "UTC",
+                                timeZoneName: "short",
+                              })}
+                            </p> */}
+                          </div>
 
                           <div className="glass-card w-full max-w-3xl mx-auto overflow-hidden">
                             {!isConnected ? (
                               <div className="flex flex-col items-center text-center px-6 py-10">
                                 <h2 className="text-xl md:text-3xl font-bold mb-2">
-                                  Get Early Access
+                                  How to join the whitelist
                                 </h2>
-                                <p className="text-sm text-gray-600 mb-6 max-w-sm">
-                                  Secure your allocation of ALLOX before it
-                                  opens to the general public.
+                                <p className="text-sm text-gray-600 mb-6 max-w-md">
+                                  Registration is open now. Secure your ALLOX
+                                  allocation before the sale opens to the
+                                  general public.
                                 </p>
+                                <WhitelistSteps current={0} />
                                 <button
                                   onClick={() => dispatch(setWalletModal(true))}
                                   className="bg-black text-white font-semibold px-8 py-3.5 rounded-xl hover:bg-gray-800 transition-colors flex items-center gap-2"
                                 >
                                   <Wallet className="w-4 h-4" />
-                                  Connect Wallet
+                                  Connect Wallet to Register
                                 </button>
                               </div>
                             ) : isRegistered ? (
@@ -2137,19 +2238,23 @@ export function PublicSaleSonarPage() {
                             ) : (
                               <div className="flex flex-col items-center text-center px-6 py-10">
                                 <h2 className="text-xl md:text-3xl font-bold mb-2">
-                                  Get Early Access
+                                  {saleOpen
+                                    ? "You're not registered yet"
+                                    : "Registration is closed"}
                                 </h2>
-                                <p className="text-sm text-gray-600 mb-6 max-w-sm">
-                                  Secure your allocation of ALLOX before it
-                                  opens to the general public.
+                                <p className="text-sm text-gray-600 mb-6 max-w-md">
+                                  {saleOpen
+                                    ? "Your wallet is connected. Complete the next step to secure your ALLOX allocation before commitments open."
+                                    : "Whitelist registration has ended for this round."}
                                 </p>
+                                {saleOpen && <WhitelistSteps current={1} />}
                                 <button
                                   onClick={() => setWlStep("form")}
                                   disabled={!saleOpen}
                                   className="bg-black text-white font-semibold px-8 py-3.5 rounded-xl hover:bg-gray-800 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                   {saleOpen
-                                    ? "Join Whitelist"
+                                    ? "Register for Whitelist →"
                                     : "Registration Closed"}
                                 </button>
                               </div>
