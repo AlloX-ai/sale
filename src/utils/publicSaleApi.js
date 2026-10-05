@@ -56,8 +56,13 @@ export function normalizePublicSaleWhitelistStatus(data) {
 /**
  * GET /public-sale/whitelist (auth required)
  * Returns { open, minUsd, maxUsd, walletBalanceUsd, balanceBreakdown,
- *           registered, registration }
+ *           registered, registration, checkedAddress, balanceIncomplete }
  * registration includes sonarEntityId + sonarLinkedAt (null until linked).
+ * checkedAddress is the wallet the backend actually read the balance for;
+ *   compare it with the connected wallet — if they differ, the user is signed
+ *   in as a different account than the one holding the funds.
+ * balanceIncomplete is true when a chain read failed, so walletBalanceUsd is
+ *   partial/unreliable and must not be shown as a real $0.
  */
 export async function fetchPublicSaleWhitelistStatus() {
   const data = await apiCall(WHITELIST_CHAIN_QUERY);
