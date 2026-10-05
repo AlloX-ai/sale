@@ -1520,16 +1520,22 @@ export function PublicSaleSonarPage() {
                               </span>
                             )} */}
                             {meta.mica && (
-                              <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white border border-gray-200 shadow-sm">
-                                <img
-                                  src={esmaLogo}
-                                  alt="ESMA"
-                                  className="h-3 w-auto object-contain"
-                                />
-                                <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
-                                  MiCA Regulated
-                                </span>
-                              </div>
+                              <Link
+                                to="https://allox.ai/mica-whitepaper"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white border border-gray-200 shadow-sm">
+                                  <img
+                                    src={esmaLogo}
+                                    alt="ESMA"
+                                    className="h-3 w-auto object-contain"
+                                  />
+                                  <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
+                                    MiCA Regulated
+                                  </span>
+                                </div>
+                              </Link>
                             )}
                           </div>
                           <div className="mt-2 space-y-0.5">
