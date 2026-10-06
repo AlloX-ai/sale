@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -57,6 +57,7 @@ import Countdown from "react-countdown";
 import { usePublicSaleWhitelist } from "../hooks/usePublicSaleWhitelist";
 import { usePrivateSale } from "../hooks/usePrivateSale";
 import { useSonarPublicSalePurchase } from "../hooks/useSonarPublicSalePurchase";
+import { usePublicSale } from "../hooks/usePublicSale";
 import { useAuth } from "../hooks/useAuth";
 import {
   CHAIN_EXPLORERS,
@@ -652,17 +653,6 @@ const KEY_MILESTONES = [
   },
 ];
 
-const MOCK_REFERRALS = [
-  { id: "0x4f2a…c91e", invested: 12500, reward: 375, date: "Jul 28" },
-  { id: "0x88bd…3a11", invested: 3200, reward: 96, date: "Jul 27" },
-  { id: "0x1c09…f44b", invested: 750, reward: 22, date: "Jul 26" },
-  { id: "0xa3e7…8801", invested: 50000, reward: 1500, date: "Jul 25" },
-  { id: "0x229f…d553", invested: 1000, reward: 30, date: "Jul 24" },
-  { id: "0x6b4c…0012", invested: 8000, reward: 240, date: "Jul 23" },
-  { id: "0xf77a…cc2d", invested: 200, reward: 6, date: "Jul 22" },
-  { id: "0x0e3b…9a4f", invested: 25000, reward: 750, date: "Jul 21" },
-];
-
 const TX_EXPLORERS = {
   Base: "https://basescan.org/tx/",
   Ethereum: "https://etherscan.io/tx/",
@@ -674,6 +664,9 @@ function shortenTxHash(hash) {
   if (!hash || hash.length < 12) return hash || "—";
   return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
 }
+
+// Public round target shown on the live stats bar (USD).
+const PUBLIC_ROUND_TARGET_USD = 1_000_000;
 
 // Whitelist allocation limits (USD)
 const WL_MIN_USD = 100;
@@ -860,11 +853,8 @@ export function PublicSaleSonarPage() {
   const [tiersOpen, setTiersOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tiersExpanded, setTiersExpanded] = useState(true);
-  const totalRefRewards = MOCK_REFERRALS.reduce((s, r) => s + r.reward, 0);
-  const totalRefInvested = MOCK_REFERRALS.reduce((s, r) => s + r.invested, 0);
 
   const [data, setData] = useState(null);
-  const [commitData, setCommitData] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [registeredInfoOpen, setRegisteredInfoOpen] = useState(false);
@@ -875,13 +865,12 @@ export function PublicSaleSonarPage() {
   const [refAmount, setRefAmount] = useState("");
   const [refSubmitted, setRefSubmitted] = useState(false);
   const [claimSuccess, setClaimSuccess] = useState(false);
+  const [claimError, setClaimError] = useState(null);
   const balancePopupRef = useRef(null);
   const registeredInfoPopupRef = useRef(null);
   const liveAssetMenuRef = useRef(null);
   const liveChainMenuRef = useRef(null);
   const investHistoryPopupRef = useRef(null);
-  // Derive referral code from incoming URL param (mock: always ALLX-DEMO)
-  const incomingRefCode = "ALLX-DEMO7";
 
   useEffect(() => {
     if (
@@ -1021,13 +1010,10 @@ export function PublicSaleSonarPage() {
 
   const getData = async () => {
     try {
-      const [seasonRes, privateSaleRes] = await Promise.all([
-        fetch(`https://api.allox.ai/season1/stats`).then((r) => r.json()),
-        fetch(`https://api.allox.ai/private-sale/stats`).then((r) => r.json()),
-      ]);
-
+      const seasonRes = await fetch(`https://api.allox.ai/season1/stats`).then(
+        (r) => r.json(),
+      );
       setData(seasonRes);
-      setCommitData(privateSaleRes);
     } catch (error) {
       console.error("Error fetching stats:", error);
     }
@@ -1053,10 +1039,16 @@ export function PublicSaleSonarPage() {
     // }
   }, [isConnected, liveSaleKind, wlStep]);
 
-  const refCode =
-    "ALLX" +
-    (walletAddress ? walletAddress.slice(2, 8).toUpperCase() : "A1B2C3");
-  const refLink = `app.allox.ai/publicsale?refCode=${refCode}`;
+  // Public sale backend: plans, stats, my position and the referral program.
+  const publicSale = usePublicSale();
+  const refCode = publicSale.referral?.refCode ?? null;
+  const refLink = publicSale.referralLink;
+  const refStats = publicSale.referral?.stats ?? null;
+  const referredInvestors = Array.isArray(publicSale.referral?.referred)
+    ? publicSale.referral.referred
+    : [];
+  const pendingRewardsUsd = Number(publicSale.referral?.pendingRewardsUsd) || 0;
+  const referralPct = Number(publicSale.sale?.referralPct) || 3;
 
   // Whitelist flow
   const wlNum = parseFloat(wlAmount) || 0;
@@ -1175,9 +1167,23 @@ export function PublicSaleSonarPage() {
     setRefSubmitted(true);
   };
 
-  const handleClaim = () => {
-    setClaimSuccess(true);
-    setTimeout(() => setClaimSuccess(false), 3000);
+  const handleClaim = async () => {
+    if (!isAuthenticated) {
+      ensureAuthenticated();
+      return;
+    }
+    if (pendingRewardsUsd <= 0 || publicSale.claiming) return;
+    setClaimError(null);
+    try {
+      await publicSale.claimReferralRewards();
+      setClaimSuccess(true);
+      setTimeout(() => setClaimSuccess(false), 3000);
+    } catch (err) {
+      const message =
+        err?.message || "Couldn't request the payout. Please try again.";
+      setClaimError(message);
+      toast.error(message);
+    }
   };
 
   // Lowering only helps when the balance still covers the minimum allocation.
@@ -1205,7 +1211,14 @@ export function PublicSaleSonarPage() {
 
   // Live purchase
   // Sonar purchase flow for the public live sale (Ethereum SettlementSale).
+  // Report each bid to the backend as soon as the wallet confirms it.
+  const { recordCommit } = publicSale;
+  const handleBidSubmitted = useCallback(
+    (txHash, { tierId }) => recordCommit({ txHash, tierId }),
+    [recordCommit],
+  );
   const publicPurchase = useSonarPublicSalePurchase({
+    onBidSubmitted: handleBidSubmitted,
     entity: sonar.authenticated ? sonar.activeEntity : null,
     walletAddress,
     enabled:
@@ -1217,9 +1230,11 @@ export function PublicSaleSonarPage() {
     switchToSaleChain,
   });
   const isPrivateSale = liveSaleKind === "private";
+  const publicPlans =
+    publicSale.plans.length > 0 ? publicSale.plans : LIVE_PLANS;
   const activePlans = isPrivateSale
     ? privateSale.plansWithEligibility
-    : LIVE_PLANS;
+    : publicPlans;
   const activeSaleSteps = isPrivateSale
     ? PRIVATE_SALE_STEPS
     : PUBLIC_SALE_STEPS;
@@ -1259,41 +1274,61 @@ export function PublicSaleSonarPage() {
     Number(privateSelectedTierPosition?.allocationTokens) || 0;
   const privateTierUsd =
     Number(privateSelectedTierPosition?.contributedUsd) || 0;
-  // Confirmed position shown in the allocation panel. Public commitments are
-  // not split by plan on-chain, so the total is priced at the selected plan.
+  // Confirmed public position from GET /public-sale/position; falls back to
+  // the on-chain commitment priced at the selected plan while it loads.
+  const publicPosition = publicSale.position;
   const publicCommittedUsd = isPrivateSale
     ? 0
-    : Number(publicPurchase.committedTotal) || 0;
+    : publicPosition?.commitmentUsd != null
+      ? Number(publicPosition.commitmentUsd) || 0
+      : Number(publicPurchase.committedTotal) || 0;
+  const publicPositionTokens =
+    publicPosition?.allocationTokens != null
+      ? Number(publicPosition.allocationTokens) || 0
+      : livePlan?.price
+        ? publicCommittedUsd / livePlan.price
+        : 0;
   const positionUsd = isPrivateSale ? privateTierUsd : publicCommittedUsd;
   const positionTokens = isPrivateSale
     ? privateTierAllocation
-    : livePlan?.price
-      ? publicCommittedUsd / livePlan.price
-      : 0;
+    : publicPositionTokens;
   const hasPosition = positionTokens > 0 || positionUsd > 0;
   // Prefer live entry preview; fall back to the confirmed position.
   const estimateTokensRaw =
     liveTokensRaw <= 0 && positionTokens > 0 ? positionTokens : liveTokensRaw;
-  const liveTgeTokensRaw = (estimateTokensRaw * (livePlan?.tgePct ?? 0)) / 100;
+  // Showing the confirmed public position: use the backend's TGE/locked split.
+  const useApiPublicSplit =
+    !isPrivateSale &&
+    liveTokensRaw <= 0 &&
+    publicPosition?.availableAtTgeTokens != null &&
+    publicPosition?.lockedTokens != null;
+  const liveTgeTokensRaw = useApiPublicSplit
+    ? Number(publicPosition.availableAtTgeTokens) || 0
+    : (estimateTokensRaw * (livePlan?.tgePct ?? 0)) / 100;
+  const liveLockedTokensRaw = useApiPublicSplit
+    ? Number(publicPosition.lockedTokens) || 0
+    : estimateTokensRaw - liveTgeTokensRaw;
   const liveAllox =
     liveNum || positionTokens > 0
       ? formatCompactNumber(Math.floor(estimateTokensRaw))
       : "0";
   const liveTgeTokens = formatCompactNumber(Math.floor(liveTgeTokensRaw));
-  const liveLockedTokens = formatCompactNumber(
-    Math.floor(estimateTokensRaw - liveTgeTokensRaw),
-  );
+  const liveLockedTokens = formatCompactNumber(Math.floor(liveLockedTokensRaw));
   const pubPct = (320000 / 2500000) * 100;
 
   const switchLiveSaleKind = (kind) => {
     setLiveSaleKind(kind);
-    const nextPlans = kind === "private" ? privateSale.plans : LIVE_PLANS;
+    const nextPlans = kind === "private" ? privateSale.plans : publicPlans;
     if (nextPlans.length > 0 && !nextPlans.some((p) => p.id === livePlanId)) {
       setLivePlanId(nextPlans[0].id);
     }
   };
 
   const copyRef = () => {
+    if (!refLink) {
+      if (!isAuthenticated) ensureAuthenticated();
+      return;
+    }
     navigator.clipboard.writeText(refLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -1303,8 +1338,10 @@ export function PublicSaleSonarPage() {
   const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
   const liveMinUsd = isPrivateSale
     ? privateSale.minContributionUsd
-    : WL_MIN_USD;
-  const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
+    : (Number(publicSale.sale?.minCommitUsd) || WL_MIN_USD);
+  const liveMaxUsd = isPrivateSale
+    ? privateSale.maxContributionUsd
+    : (Number(publicSale.sale?.maxCommitUsd) || 200_000);
   const publicLiveSonarReady =
     !sonar.configured ||
     (sonar.authenticated && sonarEligible && !sonarHasError);
@@ -1347,20 +1384,56 @@ export function PublicSaleSonarPage() {
       !liveInsufficientBalance &&
       liveNum >= liveMinUsd &&
       liveNum <= liveMaxUsd;
-  const publicInvestments = publicPurchase.committedByToken
-    .filter((row) => row.amount > 0)
-    .map((row) => ({
-      id: `commit-${row.symbol}`,
-      date: "Committed",
-      amount: row.amount,
-      token: row.symbol,
-      network: PUBLIC_SALE_CHAIN_NAME,
-      txHash:
-        publicPurchase.lastTxHash &&
-        row.symbol.toUpperCase() === liveAsset.toUpperCase()
-          ? publicPurchase.lastTxHash
-          : null,
-    }));
+  const publicTransactions = Array.isArray(publicPosition?.transactions)
+    ? publicPosition.transactions
+    : null;
+  // Backend transactions when available; otherwise the on-chain per-token
+  // commitment.
+  const publicInvestments = publicTransactions
+    ? [...publicTransactions]
+        .sort(
+          (a, b) =>
+            (Date.parse(b?.at || 0) || 0) - (Date.parse(a?.at || 0) || 0),
+        )
+        .map((tx, idx) => ({
+          id: tx.txHash || `tx-${idx}`,
+          date: tx.at
+            ? new Date(tx.at).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })
+            : "Committed",
+          amount: Number(tx.amountUsd ?? tx.amount) || 0,
+          token: String(tx.token || tx.symbol || "").toUpperCase(),
+          network: PUBLIC_SALE_CHAIN_NAME,
+          txHash: tx.txHash || null,
+          explorerUrl: tx.explorerUrl || null,
+          status: tx.status || null,
+        }))
+    : publicPurchase.committedByToken
+        .filter((row) => row.amount > 0)
+        .map((row) => ({
+          id: `commit-${row.symbol}`,
+          date: "Committed",
+          amount: row.amount,
+          token: row.symbol,
+          network: PUBLIC_SALE_CHAIN_NAME,
+          txHash:
+            publicPurchase.lastTxHash &&
+            row.symbol.toUpperCase() === liveAsset.toUpperCase()
+              ? publicPurchase.lastTxHash
+              : null,
+        }));
+  // Backend record of the bid just confirmed, for its explorer link + status.
+  const lastPublicTx =
+    publicPurchase.lastTxHash && publicTransactions
+      ? publicTransactions.find(
+          (tx) =>
+            String(tx?.txHash || "").toLowerCase() ===
+            publicPurchase.lastTxHash.toLowerCase(),
+        ) ?? null
+      : null;
   const PURCHASE_STEP_LABELS = {
     checking: "Checking eligibility with Sonar…",
     permit: "Getting purchase permit…",
@@ -1477,7 +1550,7 @@ export function PublicSaleSonarPage() {
           </div>
         </div> */}
 
-        {/* {liveSaleKind === "public" && (
+        {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
          
             <div className="flex p-1 bg-white/60 backdrop-blur-xl border border-white/60 rounded-xl shadow-sm mt-4 md:mt-0">
@@ -1492,7 +1565,7 @@ export function PublicSaleSonarPage() {
               ))}
             </div>
           </div>
-        )} */}
+        )}
         <AnimatePresence mode="wait">
           {/* ══ LIVE TAB ══ */}
           {/* {saleState === "live" && ( */}
@@ -2016,12 +2089,18 @@ export function PublicSaleSonarPage() {
                 {liveSaleKind === "public" && saleState === "live" && (
                   <>
                     {(() => {
-                      const subscriptionX =
-                        commitData?.raisedUsd / commitData?.goalUsd;
-                      const targetBarPct = Math.min(
-                        (commitData?.raisedUsd / commitData?.goalUsd) * 100,
-                        100,
+                      const raisedUsd = Number(
+                        publicSale.stats?.raisedUsd ??
+                          publicSale.sale?.raisedUsd ??
+                          0,
                       );
+                      const contributors =
+                        publicSale.stats?.contributors ??
+                        publicSale.sale?.contributors ??
+                        null;
+                      const subscriptionX =
+                        raisedUsd / PUBLIC_ROUND_TARGET_USD;
+                      const targetBarPct = Math.min(subscriptionX * 100, 100);
                       const overflowBarPct = 100 - targetBarPct;
                       return (
                         <div className="glass-card px-5 py-4">
@@ -2039,7 +2118,7 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
                               <p className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate">
-                                ${commitData?.raisedUsd.toLocaleString()}
+                                ${raisedUsd.toLocaleString()}
                               </p>
                             </div>
 
@@ -2055,8 +2134,8 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
                               <p className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate">
-                                {commitData?.contributors != null
-                                  ? commitData.contributors.toLocaleString()
+                                {contributors != null
+                                  ? Number(contributors).toLocaleString()
                                   : "—"}
                               </p>
                             </div>
@@ -2099,10 +2178,14 @@ export function PublicSaleSonarPage() {
                             </div>
                             <div className="flex justify-between mt-1">
                               <span className="text-[10px] text-gray-500">
-                                ${commitData?.raisedUsd.toLocaleString()} raised
+                                ${raisedUsd.toLocaleString()} raised
                               </span>
                               <span className="text-[10px] text-gray-500">
-                                Round target: $1.00M
+                                Round target: $
+                                {(PUBLIC_ROUND_TARGET_USD / 1_000_000).toFixed(
+                                  2,
+                                )}
+                                M
                               </span>
                             </div>
                           </div>
@@ -3692,14 +3775,14 @@ export function PublicSaleSonarPage() {
                         {/* Public sale: Sonar purchase flow status */}
                         {!isPrivateSale && isConnected && (
                           <div className="flex flex-col gap-2">
-                            {publicPurchase.committedTotal > 0 && (
+                            {publicCommittedUsd > 0 && (
                               <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs">
                                 <span className="text-gray-500">
                                   Your current commitment
                                 </span>
                                 <span className="font-bold text-gray-900 tabular-nums">
                                   $
-                                  {publicPurchase.committedTotal.toLocaleString(
+                                  {publicCommittedUsd.toLocaleString(
                                     undefined,
                                     { maximumFractionDigits: 2 },
                                   )}
@@ -3708,7 +3791,7 @@ export function PublicSaleSonarPage() {
                                       {" "}
                                       → $
                                       {(
-                                        publicPurchase.committedTotal + liveNum
+                                        publicCommittedUsd + liveNum
                                       ).toLocaleString(undefined, {
                                         maximumFractionDigits: 2,
                                       })}{" "}
@@ -3856,10 +3939,18 @@ export function PublicSaleSonarPage() {
                                 <div className="min-w-0">
                                   <p className="text-xs font-semibold text-emerald-800">
                                     Commitment confirmed
+                                    {lastPublicTx?.status && (
+                                      <span className="ml-1.5 font-medium capitalize text-emerald-700">
+                                        · {lastPublicTx.status}
+                                      </span>
+                                    )}
                                   </p>
                                   {publicPurchase.lastTxHash && (
                                     <a
-                                      href={`${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`}
+                                      href={
+                                        lastPublicTx?.explorerUrl ||
+                                        `${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-0.5"
@@ -3937,9 +4028,12 @@ export function PublicSaleSonarPage() {
                                 .commit({
                                   amountUsd: liveAmount,
                                   tokenSymbol: liveAsset,
+                                  tierId: livePlan?.tierId,
                                 })
                                 .then((ok) => {
-                                  if (ok) setLiveAmount("");
+                                  if (!ok) return;
+                                  setLiveAmount("");
+                                  publicSale.refreshPosition();
                                 });
                               return;
                             }
@@ -4071,7 +4165,9 @@ export function PublicSaleSonarPage() {
                                           : publicInvestments
                                         ).length
                                       }{" "}
-                                      {isPrivateSale ? "tx" : "tokens"}
+                                      {isPrivateSale || publicTransactions
+                                        ? "tx"
+                                        : "tokens"}
                                     </span>
                                   </div>
 
@@ -4103,9 +4199,7 @@ export function PublicSaleSonarPage() {
                                         const amount = isPrivateSale
                                           ? inv.amountUsd
                                           : inv.amount;
-                                        const status = isPrivateSale
-                                          ? inv.status
-                                          : null;
+                                        const status = inv.status || null;
                                         const allocation = isPrivateSale
                                           ? Number(inv.allocationTokens) || 0
                                           : 0;
@@ -4141,7 +4235,9 @@ export function PublicSaleSonarPage() {
                                                 {status && (
                                                   <span
                                                     className={`ml-1.5 capitalize ${
-                                                      status === "verified"
+                                                      ["verified", "confirmed", "success"].includes(
+                                                        String(status).toLowerCase(),
+                                                      )
                                                         ? "text-emerald-600"
                                                         : status === "pending"
                                                           ? "text-amber-600"
@@ -4180,7 +4276,10 @@ export function PublicSaleSonarPage() {
                                               </span>
                                               {txHash && (
                                                 <a
-                                                  href={`${explorer}${txHash}`}
+                                                  href={
+                                                    inv.explorerUrl ||
+                                                    `${explorer}${txHash}`
+                                                  }
                                                   target="_blank"
                                                   rel="noopener noreferrer"
                                                   className="inline-flex items-center gap-0.5 font-semibold text-indigo-600 hover:text-indigo-700 hover:underline underline-offset-2"
@@ -4547,7 +4646,7 @@ export function PublicSaleSonarPage() {
                   Referral Program
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Earn 3% on every investment your referrals make in real time.
+                  Earn {referralPct}% on every investment your referrals make in real time.
                 </p>
               </div>
               <button
@@ -4587,7 +4686,7 @@ export function PublicSaleSonarPage() {
                       Share & Earn
                     </div>
                     <div className="text-xs text-gray-500">
-                      3% commission on every referral investment
+                      {referralPct}% commission on every referral investment
                     </div>
                   </div>
                 </div>
@@ -4602,7 +4701,7 @@ export function PublicSaleSonarPage() {
                     },
                     {
                       step: "3",
-                      text: "You earn 3% of their investment instantly",
+                      text: `You earn ${referralPct}% of their investment instantly`,
                     },
                   ].map((item) => (
                     <div key={item.step} className="flex items-center gap-3">
@@ -4633,11 +4732,17 @@ export function PublicSaleSonarPage() {
                     }}
                   >
                     <span className="text-xs text-gray-600 font-mono flex-1 truncate">
-                      {refLink}
+                      {refLink ||
+                        (!isAuthenticated
+                          ? "Sign in to get your referral link"
+                          : publicSale.referralLoading
+                            ? "Loading…"
+                            : "—")}
                     </span>
                     <button
                       onClick={copyRef}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0"
+                      disabled={isAuthenticated && !refLink}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{
                         background: copied
                           ? "#22c55e"
@@ -4650,6 +4755,8 @@ export function PublicSaleSonarPage() {
                           <Check className="w-3 h-3" />
                           Copied!
                         </>
+                      ) : !isAuthenticated ? (
+                        "Sign in"
                       ) : (
                         <>
                           <Copy className="w-3 h-3" />
@@ -4665,15 +4772,21 @@ export function PublicSaleSonarPage() {
                   {[
                     {
                       label: "Referrals",
-                      value: MOCK_REFERRALS.length.toString(),
+                      value: refStats
+                        ? Number(refStats.referrals || 0).toLocaleString()
+                        : "—",
                     },
                     {
                       label: "Total Vol.",
-                      value: `$${(totalRefInvested / 1000).toFixed(1)}k`,
+                      value: refStats
+                        ? `$${formatCompactNumber(Number(refStats.totalVolumeUsd) || 0)}`
+                        : "—",
                     },
                     {
                       label: "Earned (USDT)",
-                      value: `$${totalRefRewards.toLocaleString()}`,
+                      value: refStats
+                        ? `$${(Number(refStats.earnedUsd) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                        : "—",
                     },
                   ].map((s) => (
                     <div
@@ -4708,7 +4821,7 @@ export function PublicSaleSonarPage() {
                       color: "#6366f1",
                     }}
                   >
-                    {MOCK_REFERRALS.length} users
+                    {referredInvestors.length} users
                   </div>
                 </div>
 
@@ -4726,12 +4839,21 @@ export function PublicSaleSonarPage() {
                       Invested
                     </span>
                     <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 text-right">
-                      Your 3%
+                      Your {referralPct}%
                     </span>
                   </div>
-                  {MOCK_REFERRALS.map((r, i) => (
+                  {referredInvestors.length === 0 && (
+                    <p className="px-3 py-6 text-xs text-gray-400 text-center">
+                      {!isAuthenticated
+                        ? "Sign in to see the investors you referred."
+                        : publicSale.referralLoading
+                          ? "Loading referrals…"
+                          : "No referred investors yet. Share your link to start earning."}
+                    </p>
+                  )}
+                  {referredInvestors.map((r, i) => (
                     <motion.div
-                      key={i}
+                      key={`${r.wallet}-${r.at ?? i}`}
                       initial={{ opacity: 0, x: 8 }}
                       whileInView={{ opacity: 1, x: 0 }}
                       viewport={{ once: true }}
@@ -4756,20 +4878,31 @@ export function PublicSaleSonarPage() {
                     >
                       <div>
                         <div className="text-xs font-mono font-semibold text-gray-700">
-                          {r.id}
+                          {r.wallet && r.wallet.length > 12
+                            ? `${r.wallet.slice(0, 6)}…${r.wallet.slice(-4)}`
+                            : r.wallet || "—"}
                         </div>
                         <div className="text-[10px] text-gray-400">
-                          {r.date}
+                          {r.at
+                            ? new Date(r.at).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : ""}
                         </div>
                       </div>
                       <div className="text-xs font-bold text-gray-800 text-center">
-                        ${r.invested.toLocaleString()}
+                        ${(Number(r.investedUsd) || 0).toLocaleString()}
                       </div>
                       <div
                         className="text-xs font-black text-right"
                         style={{ color: "#6366f1" }}
                       >
-                        +${r.reward}
+                        +$
+                        {(Number(r.commissionUsd) || 0).toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 2 },
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -4792,8 +4925,17 @@ export function PublicSaleSonarPage() {
                       className="text-xl font-black"
                       style={{ color: "#6366f1" }}
                     >
-                      ${totalRefRewards.toLocaleString()} USDT
+                      $
+                      {pendingRewardsUsd.toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      USDT
                     </div>
+                    {claimError && (
+                      <div className="text-[11px] text-red-500 mt-1">
+                        {claimError}
+                      </div>
+                    )}
                   </div>
                   <AnimatePresence mode="wait">
                     {claimSuccess ? (
@@ -4814,7 +4956,11 @@ export function PublicSaleSonarPage() {
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.8, opacity: 0 }}
                         onClick={handleClaim}
-                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-black transition-all hover:opacity-90 active:scale-95"
+                        disabled={
+                          isAuthenticated &&
+                          (pendingRewardsUsd <= 0 || publicSale.claiming)
+                        }
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-black transition-all hover:opacity-90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                         style={{
                           background:
                             "linear-gradient(135deg, #818cf8, #6366f1)",
@@ -4823,7 +4969,11 @@ export function PublicSaleSonarPage() {
                         }}
                       >
                         <Award className="w-4 h-4" />
-                        Claim
+                        {!isAuthenticated
+                          ? "Sign in"
+                          : publicSale.claiming
+                            ? "Claiming…"
+                            : "Claim"}
                       </motion.button>
                     )}
                   </AnimatePresence>
@@ -6072,7 +6222,7 @@ export function PublicSaleSonarPage() {
                       className="text-sm font-black"
                       style={{ color: "#6366f1" }}
                     >
-                      {incomingRefCode}
+                      {refCode || "—"}
                     </div>
                   </div>
                   <div
@@ -6211,7 +6361,7 @@ export function PublicSaleSonarPage() {
                       </div>
 
                       {/* Tier preview if amount selected */}
-                      {refAmount &&
+                      {/* {refAmount &&
                         (() => {
                           const num = parseFloat(
                             refAmount.replace(/[$,]/g, ""),
@@ -6240,7 +6390,7 @@ export function PublicSaleSonarPage() {
                               </p>
                             </div>
                           ) : null;
-                        })()}
+                        })()} */}
 
                       <button
                         onClick={handleRefSubmit}
