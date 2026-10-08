@@ -62,6 +62,7 @@ import {
 import { useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   getPrivyEmbedded,
+  getEmbeddedNumericChainId,
   switchPrivyEmbeddedToChain,
 } from "./utils/privyWalletUtils";
 import { setPrivyLogoutBridge } from "./auth/privyLogoutBridge";
@@ -810,10 +811,8 @@ function WalletSync() {
       dispatch(setSessionSource("privy"));
       dispatch(setAddress(address));
       dispatch(setIsConnected(true));
-      const connectedChainId = Number(connected?.chainId);
-      dispatch(
-        setChainId(Number.isFinite(connectedChainId) ? connectedChainId : 56),
-      );
+      // Privy reports chainId as CAIP-2 ("eip155:1"), so Number() would be NaN
+      dispatch(setChainId(getEmbeddedNumericChainId(connected) ?? 1));
     }
   }, [
     authenticated,
