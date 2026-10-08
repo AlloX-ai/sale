@@ -62,8 +62,8 @@ createRoot(document.getElementById("root")).render(
                     loginMethods: ["email", "apple", "google"],
                     appearance: { theme: "dark" },
                     // Align embedded wallet + fundWallet with BNB first; must match chains you use in the app
-                    supportedChains: [bsc, mainnet, base],
-                    defaultChain: bsc,
+                    supportedChains: [mainnet],
+                    defaultChain: mainnet,
                     embeddedWallets: {
                       createOnLogin: "users-without-wallets", // auto-create for email/Google/Apple
                     },
