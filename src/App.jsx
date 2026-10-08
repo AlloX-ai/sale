@@ -62,6 +62,7 @@ import {
 import { useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   getPrivyEmbedded,
+  getEmbeddedNumericChainId,
   switchPrivyEmbeddedToChain,
 } from "./utils/privyWalletUtils";
 import { setPrivyLogoutBridge } from "./auth/privyLogoutBridge";
@@ -153,7 +154,7 @@ function hasPrivyEmbeddedWallet(user) {
   );
 }
 
-/** After Privy login, move embedded wallet to BNB Chain (56) so check-in and on-chain flows match Redux. */
+/** After Privy login, move embedded wallet to Ethereum (1) so check-in and on-chain flows match Redux. */
 function PrivyEnsureBnbChain() {
   const { user } = useAuth();
   const { wallets, ready } = useWallets();
@@ -168,9 +169,9 @@ function PrivyEnsureBnbChain() {
     let cancelled = false;
     (async () => {
       try {
-        await switchPrivyEmbeddedToChain(embedded, 56);
+        await switchPrivyEmbeddedToChain(embedded, 1);
       } catch (e) {
-        if (!cancelled) console.warn("Privy default BNB chain:", e);
+        if (!cancelled) console.warn("Privy default Ethereum chain:", e);
       }
     })();
     return () => {
@@ -314,8 +315,8 @@ function LaunchAppLayout() {
     dispatch(setAddress(user.address));
     dispatch(setIsConnected(true));
     dispatch(setWalletType(user.walletType || "privy"));
-    // On-chain execution uses BNB Chain (56); keeps quick wizard / chat BSC gates in sync for Privy users
-    dispatch(setChainId(56));
+    // On-chain execution uses Ethereum (1); keeps quick wizard / chat EVM gates in sync for Privy users
+    dispatch(setChainId(1));
   }, [user?.authProvider, user?.address, user?.walletType, dispatch]);
 
   // Reset auth trigger only when wallet identity genuinely switches (not on initial connect).
@@ -810,10 +811,8 @@ function WalletSync() {
       dispatch(setSessionSource("privy"));
       dispatch(setAddress(address));
       dispatch(setIsConnected(true));
-      const connectedChainId = Number(connected?.chainId);
-      dispatch(
-        setChainId(Number.isFinite(connectedChainId) ? connectedChainId : 56),
-      );
+      // Privy reports chainId as CAIP-2 ("eip155:1"), so Number() would be NaN
+      dispatch(setChainId(getEmbeddedNumericChainId(connected) ?? 1));
     }
   }, [
     authenticated,
