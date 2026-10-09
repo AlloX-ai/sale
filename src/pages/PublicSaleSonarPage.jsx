@@ -506,6 +506,7 @@ const DEX_VOLUME = [
   { week: "15 Sep", value: 98600000, label: "$98.6M" },
   { week: "29 Sep", value: 121150000, label: "$121.15M" },
   { week: "05 Oct", value: 149300000, label: "$149.3M" },
+  { week: "09 Oct", value: 162400000, label: "$162.4M" },
 ];
 
 const PUBLIC_SALE_STEPS = [
@@ -588,7 +589,7 @@ const SALE_MOMENTUM_HIGHLIGHTS = [
     accent: "#2dd4bf",
   },
   {
-    value: "$149.3M",
+    value: "$162.4M",
     label: "Cumulative DEX Aggregator Volume",
     detail: "Cumulative trading & on-chain volume",
     accent: "#fbbf24",
@@ -634,9 +635,9 @@ const KEY_MILESTONES = [
     status: "completed",
   },
   {
-    title: "$149.3M Volume Reached",
-    metric: "$149.3M",
-    desc: "Crossed $149.3M in cumulative DEX Aggregator volume across 312,000 on-chain portfolios created in 30 days.",
+    title: "$162.4M Volume Reached",
+    metric: "$162.4M",
+    desc: "Crossed $162.4M in cumulative DEX Aggregator volume across 312,000 on-chain portfolios created in 30 days.",
     status: "completed",
   },
   {

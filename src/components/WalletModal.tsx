@@ -35,6 +35,12 @@ const WALLETS = [
     chainId: BINANCE_DEFAULT_CHAIN_ID,
   },
   {
+    name: "Rabby Wallet",
+    icon: "https://cdn.allox.ai/allox/wallets/rabbyWallet.png",
+    type: "top",
+    walletType: "rabby",
+  },
+  {
     name: "OKX",
     icon: "https://cdn.allox.ai/allox/wallets/okxConnect.svg",
     type: "top",
@@ -300,7 +306,7 @@ export function WalletModal({
                 Other wallets
               </p>
               <div className="space-y-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {WALLETS.slice(2, 7).map((wallet) => (
+                {WALLETS.slice(2).map((wallet) => (
                   <button
                     key={wallet.name}
                     type="button"
