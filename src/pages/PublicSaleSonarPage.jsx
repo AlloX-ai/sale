@@ -690,17 +690,34 @@ const sanitizeUsdInput = (raw, max) => {
   return v;
 };
 
-const REF_AMOUNTS = [
-  "$100",
-  "$500",
-  "$1,000",
-  "$2,500",
-  "$5,000",
-  "$10,000",
-  "$25,000",
-  "$50,000",
-  "$100,000",
+// "Join the Sale" form amount options, clamped to the sale's min/max.
+const REF_AMOUNT_STEPS = [
+  100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 200_000,
 ];
+const buildRefAmountOptions = (min, max) =>
+  [
+    ...new Set([
+      min,
+      ...REF_AMOUNT_STEPS.filter((a) => a > min && a < max),
+      max,
+    ]),
+  ].filter((a) => a > 0);
+
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+
+const REF_BIND_ERROR_MESSAGES = {
+  SELF_REFERRAL: "You can't use your own referral code.",
+  ALREADY_INVESTED:
+    "This wallet had already invested, so the referral code wasn't applied.",
+  BOUND_TO_ANOTHER_CODE:
+    "This wallet is already linked to another referral code.",
+  UNKNOWN_CODE: "This referral code doesn't exist.",
+};
+
+const shortWallet = (wallet) =>
+  wallet && wallet.length > 12
+    ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}`
+    : wallet || "—";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -864,7 +881,11 @@ export function PublicSaleSonarPage() {
   const [refFormOpen, setRefFormOpen] = useState(false);
   const [refWallet, setRefWallet] = useState("");
   const [refAmount, setRefAmount] = useState("");
-  const [refSubmitted, setRefSubmitted] = useState(false);
+  const [refEmail, setRefEmail] = useState("");
+  const [refSubmitting, setRefSubmitting] = useState(false);
+  const [refFormError, setRefFormError] = useState(null);
+  // `next` from the lead response; non-null once the form was submitted.
+  const [refSubmitted, setRefSubmitted] = useState(null);
   const balancePopupRef = useRef(null);
   const registeredInfoPopupRef = useRef(null);
   const liveAssetMenuRef = useRef(null);
@@ -985,8 +1006,8 @@ export function PublicSaleSonarPage() {
     (Boolean(sonar.entitiesError) || sonar.status?.tone === "red");
   // console.log("wlStatus", wlStatus);
   const saleOpen = wlStatus ? wlStatus.open !== false : true;
-  const minUsd = WL_MIN_USD;
-  const maxUsd = WL_MAX_USD;
+  const minUsd = Number(wlStatus?.minUsd) || WL_MIN_USD;
+  const maxUsd = Number(wlStatus?.maxUsd) || WL_MAX_USD;
   const walletBalanceUsd = wlStatus?.walletBalanceUsd ?? null;
   const balanceBreakdown = Array.isArray(wlStatus?.balanceBreakdown)
     ? wlStatus.balanceBreakdown
@@ -1043,13 +1064,50 @@ export function PublicSaleSonarPage() {
   const refCode = publicSale.referral?.refCode ?? null;
   const refLink = publicSale.referralLink;
   const refStats = publicSale.referral?.stats ?? null;
-  const referredInvestors = Array.isArray(publicSale.referral?.referred)
-    ? publicSale.referral.referred
-    : [];
+  // Confirmed and form-sourced (unconfirmed) referrals plus "Invited" leads,
+  // newest first.
+  const referredInvestors = [
+    ...(Array.isArray(publicSale.referral?.referred)
+      ? publicSale.referral.referred.map((r) => ({
+          ...r,
+          kind: r.confirmed === false ? "pending" : "confirmed",
+        }))
+      : []),
+    ...(Array.isArray(publicSale.referral?.leads)
+      ? publicSale.referral.leads.map((l) => ({
+          wallet: l.wallet,
+          investedUsd: l.amountUsd,
+          commissionUsd: null,
+          at: l.at,
+          kind: "invited",
+        }))
+      : []),
+  ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   // Referral rewards are paid in $ALLOX, not USDT.
   const pendingRewardsAllox =
     Number(publicSale.referral?.pendingRewardsUsd) || 0;
-  const referralPct = Number(publicSale.sale?.referralPct) || 3;
+  const requestedRewardsAllox = Number(publicSale.referral?.requestedUsd) || 0;
+  const paidRewardsAllox = Number(publicSale.referral?.paidUsd) || 0;
+  const referralClaims = Array.isArray(publicSale.referral?.claims)
+    ? publicSale.referral.claims
+    : [];
+  // 8% for private-sale contributors, 5% for everyone else.
+  const referralPct =
+    Number(publicSale.referral?.commissionPct) ||
+    Number(publicSale.sale?.referralPct) ||
+    5;
+  // Code the lead form submits for: the one the visitor landed with, else the
+  // signed-in user's own code (inviting someone directly).
+  const formRefCode = publicSale.landingRefCode || refCode;
+  const refAmountOptions = buildRefAmountOptions(
+    Number(publicSale.sale?.minCommitUsd) || WL_MIN_USD,
+    Number(publicSale.sale?.maxCommitUsd) || WL_MAX_USD,
+  );
+  const referredByCode = publicSale.position?.referredByCode ?? null;
+  const bindErrorMessage = publicSale.bindError
+    ? REF_BIND_ERROR_MESSAGES[publicSale.bindError.reason] ||
+      publicSale.bindError.message
+    : null;
 
   // Whitelist flow
   const wlNum = parseFloat(wlAmount) || 0;
@@ -1162,10 +1220,66 @@ export function PublicSaleSonarPage() {
     }
   };
 
-  const handleRefSubmit = () => {
-    if (!refWallet.startsWith("0x") || refWallet.length < 10 || !refAmount)
+  const openRefForm = () => {
+    setRefFormOpen(true);
+    setRefSubmitted(null);
+    setRefFormError(null);
+    setRefWallet("");
+    setRefAmount("");
+    setRefEmail("");
+  };
+
+  const closeRefForm = () => {
+    setRefFormOpen(false);
+    setRefSubmitted(null);
+  };
+
+  const handleRefSubmit = async () => {
+    if (!formRefCode || !EVM_ADDRESS_RE.test(refWallet.trim()) || !refAmount)
       return;
-    setRefSubmitted(true);
+    setRefSubmitting(true);
+    setRefFormError(null);
+    try {
+      const res = await publicSale.submitReferralLead({
+        refCode: formRefCode,
+        address: refWallet.trim(),
+        amountUsd: Number(refAmount),
+        email: refEmail,
+      });
+      setRefSubmitted(
+        res?.next ||
+          "Log in with this wallet on the sale page to confirm and invest.",
+      );
+    } catch (err) {
+      setRefFormError(
+        err?.status === 404
+          ? "This referral code wasn't found."
+          : err?.status === 409
+            ? "You can't use your own referral code. Enter a different wallet."
+            : err?.status === 400
+              ? err.message
+              : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setRefSubmitting(false);
+    }
+  };
+
+  const handleClaimReferral = async () => {
+    if (!isConnected || !isAuthenticated) {
+      await signInForReferral();
+      return;
+    }
+    try {
+      await publicSale.claimReferralRewards();
+      toast.success("Payout requested.");
+    } catch (err) {
+      if (err?.status === 409) {
+        toast.error("You already have a payout request open.");
+      } else {
+        toast.error(err?.message || "Couldn't request the payout.");
+      }
+    }
   };
 
   // Lowering only helps when the balance still covers the minimum allocation.
@@ -1306,14 +1420,33 @@ export function PublicSaleSonarPage() {
     }
   };
 
-  const copyRef = () => {
-    if (!refLink) {
-      if (!isAuthenticated) ensureAuthenticated();
+  // Referral data needs a connected wallet and a signed-in session: open the
+  // wallet modal first, then ask for the signature.
+  const signInForReferral = async () => {
+    if (!isConnected) {
+      dispatch(setWalletModal(true));
       return;
     }
-    navigator.clipboard.writeText(refLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await ensureAuthenticated();
+    } catch (err) {
+      toast.error(err?.message || "Sign-in failed. Please try again.");
+    }
+  };
+
+  const copyRef = async () => {
+    if (!isConnected || !isAuthenticated) {
+      await signInForReferral();
+      return;
+    }
+    if (!refLink) return;
+    try {
+      await navigator.clipboard.writeText(refLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy the link. Please copy it manually.");
+    }
   };
 
   const WL_PRESETS = ["$100", "$500", "$1,000", "$5,000", "$10,000"];
@@ -1531,6 +1664,50 @@ export function PublicSaleSonarPage() {
             </p>
           </div>
         </div> */}
+
+        {/* Referral landing (?refCode=) / "Referred by" */}
+        {(referredByCode || publicSale.landingRefCode) && (
+          <div
+            className="flex flex-wrap items-center gap-3 mt-2 p-3 rounded-2xl"
+            style={{
+              background: "rgba(99,102,241,0.07)",
+              border: "1px solid rgba(99,102,241,0.2)",
+            }}
+          >
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{
+                background: "linear-gradient(135deg, #818cf8, #6366f1)",
+              }}
+            >
+              <Gift className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                {referredByCode ? "Referred by" : "You were invited with code"}
+              </div>
+              <div className="text-sm font-black" style={{ color: "#6366f1" }}>
+                {referredByCode || publicSale.landingRefCode}
+              </div>
+              {bindErrorMessage && !referredByCode && (
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  {bindErrorMessage}
+                </p>
+              )}
+            </div>
+            {!referredByCode && !bindErrorMessage && (
+              <button
+                onClick={openRefForm}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95"
+                style={{
+                  background: "linear-gradient(135deg, #818cf8, #6366f1)",
+                }}
+              >
+                Join the Sale
+              </button>
+            )}
+          </div>
+        )}
 
         {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
@@ -4638,12 +4815,7 @@ export function PublicSaleSonarPage() {
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setRefFormOpen(true);
-                  setRefSubmitted(false);
-                  setRefWallet("");
-                  setRefAmount("");
-                }}
+                onClick={openRefForm}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all hover:opacity-90 active:scale-95"
                 style={{
                   background: "linear-gradient(135deg, #818cf8, #6366f1)",
@@ -4721,15 +4893,17 @@ export function PublicSaleSonarPage() {
                   >
                     <span className="text-xs text-gray-600 font-mono flex-1 truncate">
                       {refLink ||
-                        (!isAuthenticated
-                          ? "Sign in to get your referral link"
-                          : publicSale.referralLoading
+                        (!isConnected
+                          ? "Connect wallet to get your referral link"
+                          : !isAuthenticated
+                            ? "Sign in to get your referral link"
+                            : publicSale.referralLoading
                             ? "Loading…"
                             : "—")}
                     </span>
                     <button
                       onClick={copyRef}
-                      disabled={isAuthenticated && !refLink}
+                      disabled={isConnected && isAuthenticated && !refLink}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{
                         background: copied
@@ -4743,6 +4917,8 @@ export function PublicSaleSonarPage() {
                           <Check className="w-3 h-3" />
                           Copied!
                         </>
+                      ) : !isConnected ? (
+                        "Connect wallet"
                       ) : !isAuthenticated ? (
                         "Sign in"
                       ) : (
@@ -4765,6 +4941,18 @@ export function PublicSaleSonarPage() {
                         : "—",
                     },
                     {
+                      label: "Investors",
+                      value: refStats
+                        ? Number(refStats.investors || 0).toLocaleString()
+                        : "—",
+                    },
+                    {
+                      label: "Invited",
+                      value: refStats
+                        ? Number(refStats.leads || 0).toLocaleString()
+                        : "—",
+                    },
+                    {
                       label: "Total Vol.",
                       value: refStats
                         ? `$${formatCompactNumber(Number(refStats.totalVolumeUsd) || 0)}`
@@ -4774,6 +4962,12 @@ export function PublicSaleSonarPage() {
                       label: "Earned ($ALLOX)",
                       value: refStats
                         ? formatCompactNumber(Number(refStats.earnedUsd) || 0)
+                        : "—",
+                    },
+                    {
+                      label: "Paid ($ALLOX)",
+                      value: publicSale.referral
+                        ? formatCompactNumber(paidRewardsAllox)
                         : "—",
                     },
                   ].map((s) => (
@@ -4841,12 +5035,21 @@ export function PublicSaleSonarPage() {
                   )}
                   {referredInvestors.map((r, i) => (
                     <motion.div
-                      key={`${r.wallet}-${r.at ?? i}`}
+                      key={`${r.kind}-${r.wallet}-${r.at ?? i}`}
                       initial={{ opacity: 0, x: 8 }}
                       whileInView={{ opacity: 1, x: 0 }}
                       viewport={{ once: true }}
                       transition={{ delay: i * 0.05, duration: 0.2 }}
-                      className="grid grid-cols-3 items-center px-3 py-2.5 rounded-xl"
+                      className={`grid grid-cols-3 items-center px-3 py-2.5 rounded-xl ${
+                        r.kind === "confirmed" ? "" : "opacity-60"
+                      }`}
+                      title={
+                        r.kind === "pending"
+                          ? "Earns nothing until this wallet logs in on the sale page."
+                          : r.kind === "invited"
+                            ? "Submitted through the form; hasn't invested yet."
+                            : undefined
+                      }
                       style={{
                         background:
                           i % 2 === 0 ? "rgba(0,0,0,0.02)" : "transparent",
@@ -4865,10 +5068,13 @@ export function PublicSaleSonarPage() {
                       }}
                     >
                       <div>
-                        <div className="text-xs font-mono font-semibold text-gray-700">
-                          {r.wallet && r.wallet.length > 12
-                            ? `${r.wallet.slice(0, 6)}…${r.wallet.slice(-4)}`
-                            : r.wallet || "—"}
+                        <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-gray-700">
+                          {shortWallet(r.wallet)}
+                          {r.kind !== "confirmed" && (
+                            <span className="font-sans text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">
+                              {r.kind === "pending" ? "Pending" : "Invited"}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-gray-400">
                           {r.at
@@ -4886,12 +5092,18 @@ export function PublicSaleSonarPage() {
                         className="text-xs font-black text-right"
                         style={{ color: "#6366f1" }}
                       >
-                        +
-                        {(Number(r.commissionUsd) || 0).toLocaleString(
-                          undefined,
-                          { maximumFractionDigits: 2 },
-                        )}{" "}
-                        ALLOX
+                        {r.kind === "confirmed" ? (
+                          <>
+                            +
+                            {(Number(r.commissionUsd) || 0).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 2 },
+                            )}{" "}
+                            ALLOX
+                          </>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -4906,18 +5118,95 @@ export function PublicSaleSonarPage() {
                     border: "1px solid rgba(99,102,241,0.2)",
                   }}
                 >
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
-                    Pending Rewards
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
+                        Pending Rewards
+                      </div>
+                      <div
+                        className="text-xl font-black"
+                        style={{ color: "#6366f1" }}
+                      >
+                        {pendingRewardsAllox.toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        ALLOX
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleClaimReferral}
+                      disabled={
+                        isConnected &&
+                        isAuthenticated &&
+                        (pendingRewardsAllox <= 0 || publicSale.claiming)
+                      }
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{
+                        background: "linear-gradient(135deg, #818cf8, #6366f1)",
+                      }}
+                    >
+                      {!isConnected
+                        ? "Connect wallet"
+                        : !isAuthenticated
+                          ? "Sign in"
+                          : publicSale.claiming
+                          ? "Claiming…"
+                          : "Claim"}
+                    </button>
                   </div>
-                  <div
-                    className="text-xl font-black"
-                    style={{ color: "#6366f1" }}
-                  >
-                    {pendingRewardsAllox.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    ALLOX
-                  </div>
+                  {(requestedRewardsAllox > 0 || paidRewardsAllox > 0) && (
+                    <div className="mt-2 text-[11px] text-gray-500">
+                      Requested{" "}
+                      <span className="font-semibold text-gray-700">
+                        {requestedRewardsAllox.toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                      {" · "}Paid{" "}
+                      <span className="font-semibold text-gray-700">
+                        {paidRewardsAllox.toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>{" "}
+                      ALLOX
+                    </div>
+                  )}
+                  {referralClaims.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-indigo-500/15 space-y-1.5 max-h-28 overflow-y-auto">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                        Claim history
+                      </div>
+                      {referralClaims.map((c, i) => {
+                        const at = c.at ?? c.createdAt ?? c.requestedAt;
+                        return (
+                          <div
+                            key={c.id ?? `${at}-${i}`}
+                            className="flex items-center justify-between text-[11px] text-gray-600"
+                          >
+                            <span>
+                              {at
+                                ? new Date(at).toLocaleDateString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                  })
+                                : "—"}
+                            </span>
+                            <span className="font-semibold text-gray-800">
+                              {(
+                                Number(c.amountUsd ?? c.amount) || 0
+                              ).toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              ALLOX
+                            </span>
+                            <span className="capitalize text-gray-500">
+                              {String(c.status || "requested").toLowerCase()}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -6102,10 +6391,7 @@ export function PublicSaleSonarPage() {
               backdropFilter: "blur(6px)",
             }}
             onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setRefFormOpen(false);
-                setRefSubmitted(false);
-              }
+              if (e.target === e.currentTarget) closeRefForm();
             }}
           >
             <motion.div
@@ -6130,10 +6416,7 @@ export function PublicSaleSonarPage() {
               <div className="p-6">
                 {/* Close */}
                 <button
-                  onClick={() => {
-                    setRefFormOpen(false);
-                    setRefSubmitted(false);
-                  }}
+                  onClick={closeRefForm}
                   className="absolute top-2 right-1 w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-gray-100 text-black/40"
                 >
                   <X className="w-4 h-4" />
@@ -6163,18 +6446,20 @@ export function PublicSaleSonarPage() {
                       className="text-sm font-black"
                       style={{ color: "#6366f1" }}
                     >
-                      {refCode || "—"}
+                      {formRefCode || "—"}
                     </div>
                   </div>
-                  <div
-                    className="text-[10px] font-semibold px-2 py-1 rounded-lg"
-                    style={{
-                      background: "rgba(99,102,241,0.12)",
-                      color: "#6366f1",
-                    }}
-                  >
-                    Active
-                  </div>
+                  {formRefCode && (
+                    <div
+                      className="text-[10px] font-semibold px-2 py-1 rounded-lg"
+                      style={{
+                        background: "rgba(99,102,241,0.12)",
+                        color: "#6366f1",
+                      }}
+                    >
+                      Active
+                    </div>
+                  )}
                 </div>
 
                 <AnimatePresence mode="wait">
@@ -6202,17 +6487,10 @@ export function PublicSaleSonarPage() {
                         <div className="text-xl font-black text-gray-900 mb-1">
                           Submitted!
                         </div>
-                        <p className="text-sm text-gray-500">
-                          Your contribution request has been received.
-                          <br />
-                          You will receive a confirmation shortly.
-                        </p>
+                        <p className="text-sm text-gray-500">{refSubmitted}</p>
                       </div>
                       <button
-                        onClick={() => {
-                          setRefFormOpen(false);
-                          setRefSubmitted(false);
-                        }}
+                        onClick={closeRefForm}
                         className="w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90"
                         style={{
                           background:
@@ -6240,6 +6518,14 @@ export function PublicSaleSonarPage() {
                         </p>
                       </div>
 
+                      {!formRefCode && (
+                        <p className="text-[11px] text-amber-700">
+                          {!isAuthenticated
+                            ? "Open a referral link or sign in to use your own code."
+                            : "Loading your referral code…"}
+                        </p>
+                      )}
+
                       {/* Wallet address */}
                       <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1.5">
@@ -6249,23 +6535,23 @@ export function PublicSaleSonarPage() {
                           type="text"
                           placeholder="0x..."
                           value={refWallet}
-                          onChange={(e) => setRefWallet(e.target.value)}
+                          onChange={(e) => {
+                            setRefWallet(e.target.value);
+                            setRefFormError(null);
+                          }}
                           className="w-full px-4 py-3 rounded-xl text-sm font-mono outline-none transition-all"
                           style={{
                             background: "rgba(0,0,0,0.03)",
-                            border:
-                              refWallet &&
-                              (!refWallet.startsWith("0x") ||
-                                refWallet.length < 10)
-                                ? "1.5px solid #f87171"
-                                : refWallet.length >= 10
-                                  ? "1.5px solid #22c55e"
-                                  : "1.5px solid rgba(0,0,0,0.1)",
+                            border: !refWallet
+                              ? "1.5px solid rgba(0,0,0,0.1)"
+                              : EVM_ADDRESS_RE.test(refWallet.trim())
+                                ? "1.5px solid #22c55e"
+                                : "1.5px solid #f87171",
                           }}
                         />
-                        {refWallet && !refWallet.startsWith("0x") && (
+                        {refWallet && !EVM_ADDRESS_RE.test(refWallet.trim()) && (
                           <p className="text-[11px] text-red-500 mt-1">
-                            Must start with 0x
+                            Enter a valid 0x wallet address
                           </p>
                         )}
                       </div>
@@ -6278,7 +6564,10 @@ export function PublicSaleSonarPage() {
                         <div className="relative">
                           <select
                             value={refAmount}
-                            onChange={(e) => setRefAmount(e.target.value)}
+                            onChange={(e) => {
+                              setRefAmount(e.target.value);
+                              setRefFormError(null);
+                            }}
                             className="w-full appearance-none px-4 py-3 rounded-xl text-sm font-semibold outline-none transition-all pr-10"
                             style={{
                               background: "rgba(0,0,0,0.03)",
@@ -6291,15 +6580,45 @@ export function PublicSaleSonarPage() {
                             <option value="" disabled>
                               Select amount…
                             </option>
-                            {REF_AMOUNTS.map((a) => (
-                              <option key={a} value={a}>
-                                {a}
+                            {refAmountOptions.map((a) => (
+                              <option key={a} value={String(a)}>
+                                ${a.toLocaleString()}
                               </option>
                             ))}
                           </select>
                           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-400" />
                         </div>
                       </div>
+
+                      {/* Email (optional) */}
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1.5">
+                          Email{" "}
+                          <span className="font-normal text-gray-400">
+                            (optional)
+                          </span>
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="you@example.com"
+                          value={refEmail}
+                          onChange={(e) => {
+                            setRefEmail(e.target.value);
+                            setRefFormError(null);
+                          }}
+                          className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
+                          style={{
+                            background: "rgba(0,0,0,0.03)",
+                            border: "1.5px solid rgba(0,0,0,0.1)",
+                          }}
+                        />
+                      </div>
+
+                      {refFormError && (
+                        <p className="text-[11px] text-red-500">
+                          {refFormError}
+                        </p>
+                      )}
 
                       {/* Tier preview if amount selected */}
                       {/* {refAmount &&
@@ -6336,9 +6655,10 @@ export function PublicSaleSonarPage() {
                       <button
                         onClick={handleRefSubmit}
                         disabled={
-                          !refWallet.startsWith("0x") ||
-                          refWallet.length < 10 ||
-                          !refAmount
+                          !formRefCode ||
+                          !EVM_ADDRESS_RE.test(refWallet.trim()) ||
+                          !refAmount ||
+                          refSubmitting
                         }
                         className="w-full py-3.5 rounded-xl font-black text-sm transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
@@ -6347,7 +6667,7 @@ export function PublicSaleSonarPage() {
                           color: "white",
                         }}
                       >
-                        Submit
+                        {refSubmitting ? "Submitting…" : "Submit"}
                       </button>
                     </motion.div>
                   )}

@@ -12,6 +12,8 @@ import {
   getStoredPublicSaleRefCode,
   mapPublicSaleTiersToPlans,
   submitPublicSaleCommit,
+  submitPublicSaleReferralLead,
+  validatePublicSaleRefCode,
 } from "../utils/publicSaleApi";
 
 const STATS_POLL_MS = 30_000;
@@ -30,6 +32,14 @@ export function usePublicSale({ enabled = true } = {}) {
   const [referral, setReferral] = useState(null);
   const [referralLoading, setReferralLoading] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  // ?refCode= the visitor landed with (or kept from before the login redirect).
+  const [landingRefCode] = useState(
+    () => capturePublicSaleRefCode() ?? getStoredPublicSaleRefCode(),
+  );
+  const [landingRefValid, setLandingRefValid] = useState(false);
+  // Rejected bind: { reason, message }. reason is SELF_REFERRAL,
+  // ALREADY_INVESTED, BOUND_TO_ANOTHER_CODE or UNKNOWN_CODE.
+  const [bindError, setBindError] = useState(null);
   const mountedRef = useRef(true);
   const bindAttemptRef = useRef(null);
 
@@ -90,10 +100,21 @@ export function usePublicSale({ enabled = true } = {}) {
     }
   }, []);
 
-  // Capture ?refCode= on landing so it can be bound after login.
+  // Only show the landing code (and offer it to the lead form) when it exists.
   useEffect(() => {
-    capturePublicSaleRefCode();
-  }, []);
+    if (!landingRefCode) return;
+    let cancelled = false;
+    validatePublicSaleRefCode(landingRefCode)
+      .then((data) => {
+        if (!cancelled) setLandingRefValid(data?.valid === true);
+      })
+      .catch((err) => {
+        console.error("Failed to validate referral code:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [landingRefCode]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -116,10 +137,19 @@ export function usePublicSale({ enabled = true } = {}) {
         try {
           await bindPublicSaleReferral({ refCode: code });
           clearStoredPublicSaleRefCode();
+          if (mountedRef.current) setBindError(null);
+          // referredByCode on the position changes with the bind.
+          loadPosition();
         } catch (err) {
           // 4xx = invalid, own code, or already bound: retrying won't help.
           if (err?.status >= 400 && err?.status < 500) {
             clearStoredPublicSaleRefCode();
+            if (mountedRef.current) {
+              setBindError({
+                reason: err.data?.reason ?? null,
+                message: err.message,
+              });
+            }
           } else {
             console.error("Failed to bind referral code:", err);
           }
@@ -128,6 +158,10 @@ export function usePublicSale({ enabled = true } = {}) {
       loadReferral();
     })();
   }, [enabled, isAuthenticated, loadPosition, loadReferral]);
+
+  // The landing code goes along with a commit made straight away, unless the
+  // backend already refused to bind it.
+  const commitRefCode = landingRefValid && !bindError ? landingRefCode : null;
 
   /**
    * Report a bid to the backend right after the wallet confirms it. Failures
@@ -139,15 +173,31 @@ export function usePublicSale({ enabled = true } = {}) {
         await submitPublicSaleCommit({
           txHash,
           tierId,
-          refCode: getStoredPublicSaleRefCode() ?? undefined,
+          refCode: commitRefCode ?? undefined,
         });
       } catch (err) {
         console.error("Failed to record public sale commit:", err);
       }
       loadPosition();
       loadStats();
+      loadReferral();
     },
-    [loadPosition, loadStats],
+    [commitRefCode, loadPosition, loadStats, loadReferral],
+  );
+
+  /** "Join the Sale" form; no login needed. Throws apiCall errors. */
+  const submitReferralLead = useCallback(
+    async ({ refCode, address, amountUsd, email }) => {
+      const data = await submitPublicSaleReferralLead({
+        refCode,
+        address,
+        amountUsd,
+        email,
+      });
+      if (isAuthenticated) loadReferral();
+      return data;
+    },
+    [isAuthenticated, loadReferral],
   );
 
   const claimReferralRewards = useCallback(
@@ -169,13 +219,8 @@ export function usePublicSale({ enabled = true } = {}) {
     [sale?.tiers],
   );
 
-  // refLink is a path; the site origin is prepended here.
-  const rawRefLink = (isAuthenticated && referral?.refLink) || "";
-  const referralLink = !rawRefLink
-    ? null
-    : /^https?:\/\//i.test(rawRefLink)
-      ? rawRefLink
-      : `${window.location.origin}${rawRefLink.startsWith("/") ? "" : "/"}${rawRefLink}`;
+  // refLink is an absolute URL: shown and copied as is.
+  const referralLink = (isAuthenticated && referral?.refLink) || null;
 
   return {
     sale,
@@ -188,8 +233,11 @@ export function usePublicSale({ enabled = true } = {}) {
     referralLoading,
     referralLink,
     claiming,
+    landingRefCode: landingRefValid ? landingRefCode : null,
+    bindError: isAuthenticated ? bindError : null,
     recordCommit,
     claimReferralRewards,
+    submitReferralLead,
     refreshPosition: loadPosition,
     refreshReferral: loadReferral,
   };

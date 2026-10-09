@@ -118,7 +118,8 @@ export async function linkPublicSaleWhitelistSonar({ sonarEntityId }) {
 /**
  * GET /public-sale (public)
  * Returns { window, chain, contract, tokens, minCommitUsd, maxCommitUsd,
- *           tiers[], raisedUsd, contributors, referralPct }
+ *           tiers[], raisedUsd, contributors, referralPct,
+ *           referralPctPrivateSale }
  */
 export async function fetchPublicSale() {
   return apiCall("/public-sale");
@@ -132,7 +133,8 @@ export async function fetchPublicSaleStats() {
 /**
  * GET /public-sale/position (auth)
  * Returns my commitment (commitmentUsd), plan, allocation (allocationTokens,
- * availableAtTgeTokens, lockedTokens) and transactions[] (explorerUrl, status).
+ * availableAtTgeTokens, lockedTokens), transactions[] (explorerUrl, status)
+ * and referredByCode (null when nobody referred this wallet).
  */
 export async function fetchPublicSalePosition() {
   return apiCall("/public-sale/position");
@@ -187,16 +189,29 @@ export function mapPublicSaleTiersToPlans(tiers) {
 
 /**
  * GET /public-sale/referral (auth)
- * Returns { refCode, refLink, stats: { referrals, totalVolumeUsd, earnedUsd },
- *           referred[]: { wallet, investedUsd, commissionUsd, at },
- *           pendingRewardsUsd, claims[] }
- * refLink is a path — prepend the site origin.
+ * Returns { refCode, refLink, commissionPct, commissionTier,
+ *           stats: { referrals, investors, totalVolumeUsd, earnedUsd, leads },
+ *           referred[]: { wallet, investedUsd, commissionUsd, at, confirmed },
+ *           leads[]: { wallet, amountUsd, at },
+ *           pendingRewardsUsd, requestedUsd, paidUsd, claims[] }
+ * refLink is an absolute URL. commissionTier is PRIVATE_SALE | STANDARD.
+ * Unconfirmed referred[] rows came from the lead form and earn nothing until
+ * that wallet logs in.
  */
 export async function fetchPublicSaleReferral() {
   return apiCall("/public-sale/referral");
 }
 
-/** POST /public-sale/referral/bind (auth) — visitor arrived with ?refCode= */
+/** GET /public-sale/referral/code/:code (public) → { valid } */
+export async function validatePublicSaleRefCode(code) {
+  return apiCall(`/public-sale/referral/code/${encodeURIComponent(code)}`);
+}
+
+/**
+ * POST /public-sale/referral/bind (auth) — visitor arrived with ?refCode=
+ * Errors carry data.reason: SELF_REFERRAL | ALREADY_INVESTED |
+ * BOUND_TO_ANOTHER_CODE | UNKNOWN_CODE.
+ */
 export async function bindPublicSaleReferral({ refCode }) {
   return apiCall("/public-sale/referral/bind", {
     method: "POST",
@@ -204,7 +219,34 @@ export async function bindPublicSaleReferral({ refCode }) {
   });
 }
 
-/** POST /public-sale/referral/claim (auth) — request payout of pending rewards */
+/**
+ * POST /public-sale/referral/lead (public) — "Join the Sale" form.
+ * Returns { next, … } on success.
+ *
+ * Throws { status, message, data } via apiCall:
+ *   400 → bad input (message is user-facing)
+ *   404 → referral code not found
+ *   409 → the address owns the referral code
+ */
+export async function submitPublicSaleReferralLead({
+  refCode,
+  address,
+  amountUsd,
+  email,
+}) {
+  const body = { refCode, address, amountUsd };
+  const trimmedEmail = typeof email === "string" ? email.trim() : "";
+  if (trimmedEmail) body.email = trimmedEmail;
+  return apiCall("/public-sale/referral/lead", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * POST /public-sale/referral/claim (auth) — request payout of pending rewards.
+ * 409 → a payout request is already open.
+ */
 export async function claimPublicSaleReferral({ toAddress } = {}) {
   return apiCall("/public-sale/referral/claim", {
     method: "POST",
