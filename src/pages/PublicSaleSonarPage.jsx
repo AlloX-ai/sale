@@ -525,7 +525,7 @@ const PUBLIC_SALE_STEPS = [
   {
     n: "03",
     title: "Complete verification",
-    desc: "Pass Sonar's identity and eligibility checks. Once approved, you'll be authorized to join the $ALLOX sale.",
+    desc: "Pass Sonar's identity and eligibility checks. Once approved, you'll be authorized to join the ALLOX sale.",
     icon: Shield,
   },
   {
@@ -536,7 +536,7 @@ const PUBLIC_SALE_STEPS = [
   },
   {
     n: "05",
-    title: "Receive Your $ALLOX Tokens",
+    title: "Receive Your ALLOX Tokens",
     desc: "Your allocated tokens will be distributed at the Token Generation Event (TGE).",
     icon: Gift,
   },
@@ -569,7 +569,7 @@ const PRIVATE_SALE_STEPS = [
   },
   {
     n: "05",
-    title: "Receive Your $ALLOX Tokens",
+    title: "Receive Your ALLOX Tokens",
     desc: "Tokens unlock at TGE per your private plan, full unlock, partial TGE, or cliff + vesting.",
     icon: Gift,
   },
@@ -807,7 +807,7 @@ const liveCountdownRenderer = ({
 };
 
 export function PublicSaleSonarPage() {
-  const [saleState, setSaleState] = useState("whitelist");
+  const [saleState, setSaleState] = useState("live");
   const [wlStep, setWlStep] = useState("connect");
   const [wlAmount, setWlAmount] = useState("");
   const [email, setEmail] = useState("");
@@ -865,8 +865,6 @@ export function PublicSaleSonarPage() {
   const [refWallet, setRefWallet] = useState("");
   const [refAmount, setRefAmount] = useState("");
   const [refSubmitted, setRefSubmitted] = useState(false);
-  const [claimSuccess, setClaimSuccess] = useState(false);
-  const [claimError, setClaimError] = useState(null);
   const balancePopupRef = useRef(null);
   const registeredInfoPopupRef = useRef(null);
   const liveAssetMenuRef = useRef(null);
@@ -1048,7 +1046,9 @@ export function PublicSaleSonarPage() {
   const referredInvestors = Array.isArray(publicSale.referral?.referred)
     ? publicSale.referral.referred
     : [];
-  const pendingRewardsUsd = Number(publicSale.referral?.pendingRewardsUsd) || 0;
+  // Referral rewards are paid in $ALLOX, not USDT.
+  const pendingRewardsAllox =
+    Number(publicSale.referral?.pendingRewardsUsd) || 0;
   const referralPct = Number(publicSale.sale?.referralPct) || 3;
 
   // Whitelist flow
@@ -1166,25 +1166,6 @@ export function PublicSaleSonarPage() {
     if (!refWallet.startsWith("0x") || refWallet.length < 10 || !refAmount)
       return;
     setRefSubmitted(true);
-  };
-
-  const handleClaim = async () => {
-    if (!isAuthenticated) {
-      ensureAuthenticated();
-      return;
-    }
-    if (pendingRewardsUsd <= 0 || publicSale.claiming) return;
-    setClaimError(null);
-    try {
-      await publicSale.claimReferralRewards();
-      setClaimSuccess(true);
-      setTimeout(() => setClaimSuccess(false), 3000);
-    } catch (err) {
-      const message =
-        err?.message || "Couldn't request the payout. Please try again.";
-      setClaimError(message);
-      toast.error(message);
-    }
   };
 
   // Lowering only helps when the balance still covers the minimum allocation.
@@ -1339,10 +1320,10 @@ export function PublicSaleSonarPage() {
   const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
   const liveMinUsd = isPrivateSale
     ? privateSale.minContributionUsd
-    : (Number(publicSale.sale?.minCommitUsd) || WL_MIN_USD);
+    : Number(publicSale.sale?.minCommitUsd) || WL_MIN_USD;
   const liveMaxUsd = isPrivateSale
     ? privateSale.maxContributionUsd
-    : (Number(publicSale.sale?.maxCommitUsd) || 200_000);
+    : Number(publicSale.sale?.maxCommitUsd) || 200_000;
   const publicLiveSonarReady =
     !sonar.configured ||
     (sonar.authenticated && sonarEligible && !sonarHasError);
@@ -1429,11 +1410,11 @@ export function PublicSaleSonarPage() {
   // Backend record of the bid just confirmed, for its explorer link + status.
   const lastPublicTx =
     publicPurchase.lastTxHash && publicTransactions
-      ? publicTransactions.find(
+      ? (publicTransactions.find(
           (tx) =>
             String(tx?.txHash || "").toLowerCase() ===
             publicPurchase.lastTxHash.toLowerCase(),
-        ) ?? null
+        ) ?? null)
       : null;
   const PURCHASE_STEP_LABELS = {
     checking: "Checking eligibility with Sonar…",
@@ -1553,7 +1534,6 @@ export function PublicSaleSonarPage() {
 
         {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
-         
             <div className="flex p-1 bg-white/60 backdrop-blur-xl border border-white/60 rounded-xl shadow-sm mt-4 md:mt-0">
               {["whitelist", "live"].map((s) => (
                 <button
@@ -2099,8 +2079,7 @@ export function PublicSaleSonarPage() {
                         publicSale.stats?.contributors ??
                         publicSale.sale?.contributors ??
                         null;
-                      const subscriptionX =
-                        raisedUsd / PUBLIC_ROUND_TARGET_USD;
+                      const subscriptionX = raisedUsd / PUBLIC_ROUND_TARGET_USD;
                       const targetBarPct = Math.min(subscriptionX * 100, 100);
                       const overflowBarPct = 100 - targetBarPct;
                       return (
@@ -2670,8 +2649,8 @@ export function PublicSaleSonarPage() {
                                                   <div className="flex items-start gap-2">
                                                     <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                                                     <p className="text-[11px] text-amber-800 leading-relaxed">
-                                                      Could not read balance, try
-                                                      again.
+                                                      Could not read balance,
+                                                      try again.
                                                     </p>
                                                   </div>
                                                   <button
@@ -2694,7 +2673,8 @@ export function PublicSaleSonarPage() {
                                                       : "Retry"}
                                                   </button>
                                                 </div>
-                                              ) : balanceBreakdown.length > 0 ? (
+                                              ) : balanceBreakdown.length >
+                                                0 ? (
                                                 <div className="space-y-1.5 mb-2.5">
                                                   {balanceBreakdown.map(
                                                     (row, i) => (
@@ -4236,8 +4216,14 @@ export function PublicSaleSonarPage() {
                                                 {status && (
                                                   <span
                                                     className={`ml-1.5 capitalize ${
-                                                      ["verified", "confirmed", "success"].includes(
-                                                        String(status).toLowerCase(),
+                                                      [
+                                                        "verified",
+                                                        "confirmed",
+                                                        "success",
+                                                      ].includes(
+                                                        String(
+                                                          status,
+                                                        ).toLowerCase(),
                                                       )
                                                         ? "text-emerald-600"
                                                         : status === "pending"
@@ -4647,7 +4633,8 @@ export function PublicSaleSonarPage() {
                   Referral Program
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Earn {referralPct}% on every investment your referrals make in real time.
+                  Earn {referralPct}% in ALLOX on every investment your referrals
+                  make in real time.
                 </p>
               </div>
               <button
@@ -4687,7 +4674,7 @@ export function PublicSaleSonarPage() {
                       Share & Earn
                     </div>
                     <div className="text-xs text-gray-500">
-                      {referralPct}% commission on every referral investment
+                      {referralPct}% in ALLOX on every referral investment
                     </div>
                   </div>
                 </div>
@@ -4698,11 +4685,11 @@ export function PublicSaleSonarPage() {
                     { step: "1", text: "Share your referral link with anyone" },
                     {
                       step: "2",
-                      text: "They invest in the $ALLOX Community Sale",
+                      text: "They invest in the ALLOX Community Sale",
                     },
                     {
                       step: "3",
-                      text: `You earn ${referralPct}% of their investment instantly`,
+                      text: `You earn ${referralPct}% of their investment in ALLOX`,
                     },
                   ].map((item) => (
                     <div key={item.step} className="flex items-center gap-3">
@@ -4784,9 +4771,9 @@ export function PublicSaleSonarPage() {
                         : "—",
                     },
                     {
-                      label: "Earned (USDT)",
+                      label: "Earned ($ALLOX)",
                       value: refStats
-                        ? `$${(Number(refStats.earnedUsd) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                        ? formatCompactNumber(Number(refStats.earnedUsd) || 0)
                         : "—",
                     },
                   ].map((s) => (
@@ -4809,7 +4796,7 @@ export function PublicSaleSonarPage() {
                 </div>
               </div>
 
-              {/* RIGHT — Referral list + claim */}
+              {/* RIGHT — Referral list + pending rewards */}
               <div className="glass-card p-6 flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div className="font-black text-gray-900 text-sm">
@@ -4899,85 +4886,38 @@ export function PublicSaleSonarPage() {
                         className="text-xs font-black text-right"
                         style={{ color: "#6366f1" }}
                       >
-                        +$
+                        +
                         {(Number(r.commissionUsd) || 0).toLocaleString(
                           undefined,
                           { maximumFractionDigits: 2 },
-                        )}
+                        )}{" "}
+                        ALLOX
                       </div>
                     </motion.div>
                   ))}
                 </div>
 
-                {/* Pending rewards + claim */}
+                {/* Pending rewards */}
                 <div
-                  className="rounded-xl p-4 flex items-center justify-between gap-4"
+                  className="rounded-xl p-4"
                   style={{
                     background:
                       "linear-gradient(135deg, rgba(129,140,248,0.1), rgba(99,102,241,0.08))",
                     border: "1px solid rgba(99,102,241,0.2)",
                   }}
                 >
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
-                      Pending Rewards
-                    </div>
-                    <div
-                      className="text-xl font-black"
-                      style={{ color: "#6366f1" }}
-                    >
-                      $
-                      {pendingRewardsUsd.toLocaleString(undefined, {
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      USDT
-                    </div>
-                    {claimError && (
-                      <div className="text-[11px] text-red-500 mt-1">
-                        {claimError}
-                      </div>
-                    )}
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
+                    Pending Rewards
                   </div>
-                  <AnimatePresence mode="wait">
-                    {claimSuccess ? (
-                      <motion.div
-                        key="claimed"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-black"
-                        style={{ background: "#22c55e", color: "white" }}
-                      >
-                        <Check className="w-4 h-4" /> Claimed!
-                      </motion.div>
-                    ) : (
-                      <motion.button
-                        key="claim"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        onClick={handleClaim}
-                        disabled={
-                          isAuthenticated &&
-                          (pendingRewardsUsd <= 0 || publicSale.claiming)
-                        }
-                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-black transition-all hover:opacity-90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                          color: "white",
-                          boxShadow: "0 4px 14px rgba(99,102,241,0.3)",
-                        }}
-                      >
-                        <Award className="w-4 h-4" />
-                        {!isAuthenticated
-                          ? "Sign in"
-                          : publicSale.claiming
-                            ? "Claiming…"
-                            : "Claim"}
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
+                  <div
+                    className="text-xl font-black"
+                    style={{ color: "#6366f1" }}
+                  >
+                    {pendingRewardsAllox.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    ALLOX
+                  </div>
                 </div>
               </div>
             </div>
@@ -5447,7 +5387,7 @@ export function PublicSaleSonarPage() {
               {/* Table */}
               <div className="flex-1 overflow-x-auto">
                 <div className="flex sm:flex-row flex-col items-center justify-between px-5 pt-4 pb-2 border-b border-gray-100">
-                  <h3 className="text-base font-bold">$ALLOX Tokenomics</h3>
+                  <h3 className="text-base font-bold">ALLOX Tokenomics</h3>
                   <span className="text-xs text-gray-400">
                     1,000,000,000 supply
                   </span>
