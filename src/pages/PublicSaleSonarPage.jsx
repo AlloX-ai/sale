@@ -1083,14 +1083,10 @@ export function PublicSaleSonarPage() {
         }))
       : []),
   ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
-  // Referral rewards are paid in $ALLOX, not USDT.
-  const pendingRewardsAllox =
-    Number(publicSale.referral?.pendingRewardsUsd) || 0;
-  const requestedRewardsAllox = Number(publicSale.referral?.requestedUsd) || 0;
+  // Referral rewards are paid in $ALLOX, not USDT, by the team once the sale
+  // settles (no self-serve claim for now).
+  const earnedRewardsAllox = Number(refStats?.earnedUsd) || 0;
   const paidRewardsAllox = Number(publicSale.referral?.paidUsd) || 0;
-  const referralClaims = Array.isArray(publicSale.referral?.claims)
-    ? publicSale.referral.claims
-    : [];
   // 8% for private-sale contributors, 5% for everyone else.
   const referralPct =
     Number(publicSale.referral?.commissionPct) ||
@@ -1262,23 +1258,6 @@ export function PublicSaleSonarPage() {
       );
     } finally {
       setRefSubmitting(false);
-    }
-  };
-
-  const handleClaimReferral = async () => {
-    if (!isConnected || !isAuthenticated) {
-      await signInForReferral();
-      return;
-    }
-    try {
-      await publicSale.claimReferralRewards();
-      toast.success("Payout requested.");
-    } catch (err) {
-      if (err?.status === 409) {
-        toast.error("You already have a payout request open.");
-      } else {
-        toast.error(err?.message || "Couldn't request the payout.");
-      }
     }
   };
 
@@ -1709,7 +1688,7 @@ export function PublicSaleSonarPage() {
           </div>
         )}
 
-        {liveSaleKind === "public" && (
+        {/* {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
             <div className="flex p-1 bg-white/60 backdrop-blur-xl border border-white/60 rounded-xl shadow-sm mt-4 md:mt-0">
               {["whitelist", "live"].map((s) => (
@@ -1723,7 +1702,7 @@ export function PublicSaleSonarPage() {
               ))}
             </div>
           </div>
-        )}
+        )} */}
         <AnimatePresence mode="wait">
           {/* ══ LIVE TAB ══ */}
           {/* {saleState === "live" && ( */}
@@ -4932,7 +4911,7 @@ export function PublicSaleSonarPage() {
                 </div>
 
                 {/* Stats strip */}
-                <div className="grid grid-cols-3 gap-3 mt-auto">
+                <div className="grid grid-cols-2 gap-3 mt-auto">
                   {[
                     {
                       label: "Referrals",
@@ -4956,18 +4935,6 @@ export function PublicSaleSonarPage() {
                       label: "Total Vol.",
                       value: refStats
                         ? `$${formatCompactNumber(Number(refStats.totalVolumeUsd) || 0)}`
-                        : "—",
-                    },
-                    {
-                      label: "Earned ($ALLOX)",
-                      value: refStats
-                        ? formatCompactNumber(Number(refStats.earnedUsd) || 0)
-                        : "—",
-                    },
-                    {
-                      label: "Paid ($ALLOX)",
-                      value: publicSale.referral
-                        ? formatCompactNumber(paidRewardsAllox)
                         : "—",
                     },
                   ].map((s) => (
@@ -5109,7 +5076,7 @@ export function PublicSaleSonarPage() {
                   ))}
                 </div>
 
-                {/* Pending rewards */}
+                {/* Rewards — paid by the team after the sale settles */}
                 <div
                   className="rounded-xl p-4"
                   style={{
@@ -5118,95 +5085,31 @@ export function PublicSaleSonarPage() {
                     border: "1px solid rgba(99,102,241,0.2)",
                   }}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
-                        Pending Rewards
-                      </div>
-                      <div
-                        className="text-xl font-black"
-                        style={{ color: "#6366f1" }}
-                      >
-                        {pendingRewardsAllox.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        ALLOX
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleClaimReferral}
-                      disabled={
-                        isConnected &&
-                        isAuthenticated &&
-                        (pendingRewardsAllox <= 0 || publicSale.claiming)
-                      }
-                      className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                      style={{
-                        background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                      }}
-                    >
-                      {!isConnected
-                        ? "Connect wallet"
-                        : !isAuthenticated
-                          ? "Sign in"
-                          : publicSale.claiming
-                          ? "Claiming…"
-                          : "Claim"}
-                    </button>
-                  </div>
-                  {(requestedRewardsAllox > 0 || paidRewardsAllox > 0) && (
-                    <div className="mt-2 text-[11px] text-gray-500">
-                      Requested{" "}
-                      <span className="font-semibold text-gray-700">
-                        {requestedRewardsAllox.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                      {" · "}Paid{" "}
-                      <span className="font-semibold text-gray-700">
-                        {paidRewardsAllox.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>{" "}
-                      ALLOX
-                    </div>
-                  )}
-                  {referralClaims.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-indigo-500/15 space-y-1.5 max-h-28 overflow-y-auto">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                        Claim history
-                      </div>
-                      {referralClaims.map((c, i) => {
-                        const at = c.at ?? c.createdAt ?? c.requestedAt;
-                        return (
-                          <div
-                            key={c.id ?? `${at}-${i}`}
-                            className="flex items-center justify-between text-[11px] text-gray-600"
-                          >
-                            <span>
-                              {at
-                                ? new Date(at).toLocaleDateString(undefined, {
-                                    month: "short",
-                                    day: "numeric",
-                                  })
-                                : "—"}
-                            </span>
-                            <span className="font-semibold text-gray-800">
-                              {(
-                                Number(c.amountUsd ?? c.amount) || 0
-                              ).toLocaleString(undefined, {
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: "Earned", value: earnedRewardsAllox },
+                      { label: "Paid", value: paidRewardsAllox },
+                    ].map((r) => (
+                      <div key={r.label}>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
+                          {r.label}
+                        </div>
+                        <div
+                          className="text-xl font-black"
+                          style={{ color: "#6366f1" }}
+                        >
+                          {publicSale.referral
+                            ? `${r.value.toLocaleString(undefined, {
                                 maximumFractionDigits: 2,
-                              })}{" "}
-                              ALLOX
-                            </span>
-                            <span className="capitalize text-gray-500">
-                              {String(c.status || "requested").toLowerCase()}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                              })} ALLOX`
+                            : "—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-gray-500">
+                    Commissions are paid out by the team after the sale settles.
+                  </p>
                 </div>
               </div>
             </div>
