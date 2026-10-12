@@ -112,3 +112,174 @@ export async function linkPublicSaleWhitelistSonar({ sonarEntityId }) {
     body: JSON.stringify({ sonarEntityId }),
   });
 }
+
+// ── Sale ────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /public-sale (public)
+ * Returns { window, chain, contract, tokens, minCommitUsd, maxCommitUsd,
+ *           tiers[], raisedUsd, contributors, referralPct,
+ *           referralPctPrivateSale }
+ */
+export async function fetchPublicSale() {
+  return apiCall("/public-sale");
+}
+
+/** GET /public-sale/stats (public) → { contributors, raisedUsd } */
+export async function fetchPublicSaleStats() {
+  return apiCall("/public-sale/stats");
+}
+
+/**
+ * GET /public-sale/position (auth)
+ * Returns my commitment (commitmentUsd), plan, allocation (allocationTokens,
+ * availableAtTgeTokens, lockedTokens), transactions[] (explorerUrl, status)
+ * and referredByCode (null when nobody referred this wallet).
+ */
+export async function fetchPublicSalePosition() {
+  return apiCall("/public-sale/position");
+}
+
+/**
+ * POST /public-sale/commit (auth) — call right after the wallet confirms the
+ * bid, so the backend can track the tx and attribute the referral.
+ */
+export async function submitPublicSaleCommit({ txHash, tierId, refCode }) {
+  const body = { txHash, tierId };
+  if (refCode) body.refCode = refCode;
+  return apiCall("/public-sale/commit", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+const parseFdvUsd = (fdv) => {
+  if (typeof fdv === "number") return fdv;
+  const match = String(fdv ?? "").match(/([\d.]+)\s*([kmb])?/i);
+  if (!match) return 0;
+  const mult = { k: 1e3, m: 1e6, b: 1e9 }[match[2]?.toLowerCase()] ?? 1;
+  return Number(match[1]) * mult;
+};
+
+/** Map GET /public-sale tiers[] to the plan-card shape used by the page. */
+export function mapPublicSaleTiersToPlans(tiers) {
+  if (!Array.isArray(tiers)) return [];
+  return tiers.map((tier) => {
+    const id = String(tier.key || tier.label || tier.id).toLowerCase();
+    return {
+      id,
+      tierId: tier.id,
+      key: tier.key,
+      name: tier.label || tier.key,
+      discount: Number(tier.discountPct) || 0,
+      fdv: parseFdvUsd(tier.fdv),
+      price: Number(tier.priceUsd) || 0,
+      tgePct: Number(tier.tgeUnlockPct) || 0,
+      cliff: tier.lockPeriod || "None",
+      vesting: tier.vesting || "No vesting",
+      unlock: tier.unlock || "",
+      raisedUsd: tier.raisedUsd,
+      contributors: tier.contributors,
+      premium: id === "platinum",
+    };
+  });
+}
+
+// ── Referral ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /public-sale/referral (auth)
+ * Returns { refCode, refLink, commissionPct, commissionTier,
+ *           stats: { referrals, investors, totalVolumeUsd, earnedUsd, leads },
+ *           referred[]: { wallet, investedUsd, commissionUsd, at, confirmed },
+ *           leads[]: { wallet, amountUsd, at },
+ *           pendingRewardsUsd, requestedUsd, paidUsd, claims[] }
+ * refLink is an absolute URL. commissionTier is PRIVATE_SALE | STANDARD.
+ * Unconfirmed referred[] rows came from the lead form and earn nothing until
+ * that wallet logs in.
+ */
+export async function fetchPublicSaleReferral() {
+  return apiCall("/public-sale/referral");
+}
+
+/** GET /public-sale/referral/code/:code (public) → { valid } */
+export async function validatePublicSaleRefCode(code) {
+  return apiCall(`/public-sale/referral/code/${encodeURIComponent(code)}`);
+}
+
+/**
+ * POST /public-sale/referral/bind (auth) — visitor arrived with ?refCode=
+ * Errors carry data.reason: SELF_REFERRAL | ALREADY_INVESTED |
+ * BOUND_TO_ANOTHER_CODE | UNKNOWN_CODE.
+ */
+export async function bindPublicSaleReferral({ refCode }) {
+  return apiCall("/public-sale/referral/bind", {
+    method: "POST",
+    body: JSON.stringify({ refCode }),
+  });
+}
+
+/**
+ * POST /public-sale/referral/lead (public) — "Join the Sale" form.
+ * Returns { next, … } on success.
+ *
+ * Throws { status, message, data } via apiCall:
+ *   400 → bad input (message is user-facing)
+ *   404 → referral code not found
+ *   409 → the address owns the referral code
+ */
+export async function submitPublicSaleReferralLead({
+  refCode,
+  address,
+  amountUsd,
+  email,
+}) {
+  const body = { refCode, address, amountUsd };
+  const trimmedEmail = typeof email === "string" ? email.trim() : "";
+  if (trimmedEmail) body.email = trimmedEmail;
+  return apiCall("/public-sale/referral/lead", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * POST /public-sale/referral/claim (auth) — request payout of pending rewards.
+ * 409 → a payout request is already open.
+ */
+export async function claimPublicSaleReferral({ toAddress } = {}) {
+  return apiCall("/public-sale/referral/claim", {
+    method: "POST",
+    body: JSON.stringify(toAddress ? { toAddress } : {}),
+  });
+}
+
+const PUBLIC_SALE_REF_STORAGE_KEY = "allox_public_sale_ref";
+
+/** Persist ?refCode= from the URL so it survives the login redirect. */
+export function capturePublicSaleRefCode(href = window.location.href) {
+  const code = new URL(href).searchParams.get("refCode")?.trim();
+  if (!code) return null;
+  try {
+    localStorage.setItem(PUBLIC_SALE_REF_STORAGE_KEY, code);
+  } catch {
+    // ignore
+  }
+  return code;
+}
+
+export function getStoredPublicSaleRefCode() {
+  try {
+    return localStorage.getItem(PUBLIC_SALE_REF_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearStoredPublicSaleRefCode() {
+  try {
+    localStorage.removeItem(PUBLIC_SALE_REF_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}

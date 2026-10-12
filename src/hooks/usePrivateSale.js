@@ -5,9 +5,6 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useWallets } from "@privy-io/react-auth";
 import {
   fetchPrivateSaleData,
-  fetchPrivateSaleEligibility,
-  fetchLoyaltyStatus,
-  isApprovedForPrivateSale,
   fetchPrivateSalePosition,
   submitPrivateSaleContribution,
 } from "../utils/privateSaleApi";
@@ -15,7 +12,6 @@ import {
   executeEvmPrivateSaleContribution,
   executeSolanaPrivateSaleContribution,
   fetchPrivateSaleTokenBalance,
-  isTierEligibleForUser,
   mapApiTiersToPlans,
   normalizeSaleChains,
   parsePrivateSaleRevertError,
@@ -92,15 +88,12 @@ export function usePrivateSale({ enabled = true } = {}) {
   const [saleLoading, setSaleLoading] = useState(false);
   const [saleError, setSaleError] = useState(null);
 
-  const [eligibility, setEligibility] = useState(null);
-  const [eligibilityLoading, setEligibilityLoading] = useState(false);
-
   const [position, setPosition] = useState(null);
   const [positionLoading, setPositionLoading] = useState(false);
 
   const [selectedChainKey, setSelectedChainKey] = useState(null);
   const [selectedTokenSymbol, setSelectedTokenSymbol] = useState(null);
-  const [selectedPlanId, setSelectedPlanId] = useState("silver");
+  const [selectedPlanId, setSelectedPlanId] = useState("platinum");
   const [amountUsd, setAmountUsd] = useState("");
   const setAmountUsdSanitized = useCallback((value) => {
     const cleaned = String(value ?? "")
@@ -157,50 +150,6 @@ export function usePrivateSale({ enabled = true } = {}) {
     }
   }, [enabled]);
 
-  const refreshEligibility = useCallback(async () => {
-    if (!enabled) {
-      if (mountedRef.current) setEligibility(null);
-      return null;
-    }
-    setEligibilityLoading(true);
-    try {
-      let data = null;
-      if (isAuthenticated) {
-        try {
-          data = await fetchPrivateSaleEligibility();
-        } catch (err) {
-          if (err?.status !== 401) {
-            throw err;
-          }
-        }
-      }
-
-      if (!isApprovedForPrivateSale(data) && walletAddress) {
-        const loyalty = await fetchLoyaltyStatus(walletAddress).catch(
-          () => null,
-        );
-        if (isApprovedForPrivateSale(loyalty)) {
-          data = {
-            ...(data || {}),
-            ...loyalty,
-            eligible: true,
-            whitelisted: loyalty?.whitelisted ?? true,
-          };
-        }
-      }
-
-      if (mountedRef.current) setEligibility(data);
-      return data;
-    } catch (err) {
-      if (mountedRef.current && err?.status !== 401) {
-        setEligibility(null);
-      }
-      return null;
-    } finally {
-      if (mountedRef.current) setEligibilityLoading(false);
-    }
-  }, [enabled, isAuthenticated, walletAddress]);
-
   const refreshPosition = useCallback(async () => {
     if (!enabled || !isAuthenticated) {
       if (mountedRef.current) {
@@ -235,11 +184,6 @@ export function usePrivateSale({ enabled = true } = {}) {
     const id = setInterval(refreshSaleData, SALE_REFRESH_MS);
     return () => clearInterval(id);
   }, [enabled, refreshSaleData]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    refreshEligibility();
-  }, [enabled, refreshEligibility]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -280,23 +224,6 @@ export function usePrivateSale({ enabled = true } = {}) {
     () => mapApiTiersToPlans(saleData?.tiers),
     [saleData?.tiers],
   );
-
-  const isTierEligible = useCallback(
-    (tierKey) => isTierEligibleForUser(eligibility, tierKey),
-    [eligibility],
-  );
-
-  const eligiblePlans = useMemo(() => {
-    if (!eligibility?.eligible) return [];
-    return plans.filter((plan) => isTierEligibleForUser(eligibility, plan.key));
-  }, [plans, eligibility]);
-
-  const plansWithEligibility = useMemo(() => {
-    return plans.map((plan) => ({
-      ...plan,
-      tierEligible: isTierEligibleForUser(eligibility, plan.key),
-    }));
-  }, [plans, eligibility]);
 
   const chains = useMemo(
     () => normalizeSaleChains(saleData?.chains),
@@ -626,22 +553,14 @@ export function usePrivateSale({ enabled = true } = {}) {
 
   useEffect(() => {
     if (!enabled || plans.length === 0) return;
-    const preferred =
-      eligiblePlans.find((p) => p.id === selectedPlanId) ??
-      eligiblePlans[0] ??
-      plans.find((p) => p.id === selectedPlanId) ??
-      plans[0];
+    const preferred = plans.find((p) => p.id === selectedPlanId) ?? plans[0];
     if (preferred && preferred.id !== selectedPlanId) {
       setSelectedPlanId(preferred.id);
     }
-  }, [enabled, plans, eligiblePlans, selectedPlanId]);
+  }, [enabled, plans, selectedPlanId]);
 
   const selectedPlan =
     plans.find((p) => p.id === selectedPlanId) ?? plans[0] ?? null;
-
-  const isSelectedTierEligible = selectedPlan
-    ? isTierEligibleForUser(eligibility, selectedPlan.key)
-    : false;
 
   const minContributionUsd = Number(saleData?.minContributionUsd) || 10;
   const maxContributionUsd = Number(saleData?.maxContributionUsd) || 5_000_000;
@@ -652,13 +571,10 @@ export function usePrivateSale({ enabled = true } = {}) {
       ? amountNum / selectedPlan.price
       : 0;
 
-  const isEligible = isApprovedForPrivateSale(eligibility);
   const saleActive = saleData?.window?.isActive === true;
   const saleEnded = saleData?.window?.isEnded === true;
 
   const canSubmit =
-    isEligible &&
-    isSelectedTierEligible &&
     saleActive &&
     !saleEnded &&
     !contributing &&
@@ -807,17 +723,10 @@ export function usePrivateSale({ enabled = true } = {}) {
     saleLoading,
     saleError,
     refreshSaleData,
-    eligibility,
-    eligibilityLoading,
-    refreshEligibility,
     position,
     positionLoading,
     refreshPosition,
     plans,
-    plansWithEligibility,
-    eligiblePlans,
-    isTierEligible,
-    isSelectedTierEligible,
     chains,
     availableChains,
     selectedChainKey,
@@ -837,7 +746,6 @@ export function usePrivateSale({ enabled = true } = {}) {
     allocationPreview,
     minContributionUsd,
     maxContributionUsd,
-    isEligible,
     isSolanaWallet,
     saleActive,
     saleEnded,

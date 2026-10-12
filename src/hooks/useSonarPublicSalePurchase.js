@@ -195,6 +195,7 @@ export function useSonarPublicSalePurchase({
   enabled = true,
   currentChainId,
   switchToSaleChain,
+  onBidSubmitted,
 }) {
   const sonarClient = useSonarClient();
   const config = useConfig();
@@ -357,7 +358,7 @@ export function useSonarPublicSalePurchase({
   );
 
   const commit = useCallback(
-    async ({ amountUsd, tokenSymbol }) => {
+    async ({ amountUsd, tokenSymbol, tierId }) => {
       setError(null);
       setFailure(null);
       setLastTxHash(null);
@@ -539,6 +540,9 @@ export function useSonarPublicSalePurchase({
           setLastTxHash(bidHash);
           setStep("confirming");
         }
+        // The wallet confirmed the bid: report it to the backend now rather
+        // than after the receipt, so it is tracked even if the tab closes.
+        onBidSubmitted?.(bidHash, { tierId });
         const receipt = await waitForTransactionReceipt(config, {
           hash: bidHash,
           chainId: CHAIN_ID,
@@ -565,6 +569,7 @@ export function useSonarPublicSalePurchase({
       entityID,
       getToken,
       loadPosition,
+      onBidSubmitted,
       sonarClient,
       switchToSaleChain,
       walletAddress,

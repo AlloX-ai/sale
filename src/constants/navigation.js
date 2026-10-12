@@ -11,24 +11,10 @@ import {
   Eye,
   Briefcase,
   Gem,
-  ShoppingCart,
   Landmark,
-  BadgeCheck,
 } from "lucide-react";
 
 export const navigationTabs = [
-  {
-    id: "publicSales",
-    label: "Private Sale",
-    path: "/private-sale",
-    Icon: ShoppingCart,
-  },
-  {
-    id: "loyaltyCheck",
-    label: "Loyalty Check",
-    path: "/loyalty-check",
-    Icon: BadgeCheck,
-  },
   { id: "chat", label: "Build Portfolio", path: "/", Icon: MessageSquare },
   { id: "portfolio", label: "Portfolio", path: "/portfolio", Icon: PieChart },
   { id: "stocks", label: "Stocks", path: "/stocks", Icon: Landmark },
