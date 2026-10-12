@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -57,6 +57,7 @@ import Countdown from "react-countdown";
 import { usePublicSaleWhitelist } from "../hooks/usePublicSaleWhitelist";
 import { usePrivateSale } from "../hooks/usePrivateSale";
 import { useSonarPublicSalePurchase } from "../hooks/useSonarPublicSalePurchase";
+import { usePublicSale } from "../hooks/usePublicSale";
 import { useAuth } from "../hooks/useAuth";
 import {
   CHAIN_EXPLORERS,
@@ -506,6 +507,7 @@ const DEX_VOLUME = [
   { week: "29 Sep", value: 121150000, label: "$121.15M" },
   { week: "05 Oct", value: 149300000, label: "$149.3M" },
   { week: "09 Oct", value: 162400000, label: "$162.4M" },
+  { week: "12 Oct", value: 171400000, label: "$171.4M" },
 ];
 
 const PUBLIC_SALE_STEPS = [
@@ -524,7 +526,7 @@ const PUBLIC_SALE_STEPS = [
   {
     n: "03",
     title: "Complete verification",
-    desc: "Pass Sonar's identity and eligibility checks. Once approved, you'll be authorized to join the $ALLOX sale.",
+    desc: "Pass Sonar's identity and eligibility checks. Once approved, you'll be authorized to join the ALLOX sale.",
     icon: Shield,
   },
   {
@@ -535,7 +537,7 @@ const PUBLIC_SALE_STEPS = [
   },
   {
     n: "05",
-    title: "Receive Your $ALLOX Tokens",
+    title: "Receive Your ALLOX Tokens",
     desc: "Your allocated tokens will be distributed at the Token Generation Event (TGE).",
     icon: Gift,
   },
@@ -544,31 +546,25 @@ const PUBLIC_SALE_STEPS = [
 const PRIVATE_SALE_STEPS = [
   {
     n: "01",
-    title: "Confirm Loyalty Access",
-    desc: "Sign in with your AlloX account. Private sale access is reserved for loyalty users.",
+    title: "Sign In",
+    desc: "Sign in with your AlloX account to access the private sale.",
     icon: Award,
   },
   {
     n: "02",
     title: "Connect Your Wallet",
-    desc: "Connect the wallet linked to your loyalty profile for contribution and allocation delivery.",
+    desc: "Connect the wallet you'll contribute from and receive your allocation on.",
     icon: Wallet,
   },
   {
     n: "03",
-    title: "Unlock Eligibility",
-    desc: "Confirm you meet loyalty criteria. Eligible users get access to private FDV tiers.",
-    icon: Shield,
-  },
-  {
-    n: "04",
     title: "Join the Private Sale",
     desc: "Choose a private plan (0% / 20% / 40% discount), then commit with USDC or USDT.",
     icon: DollarSign,
   },
   {
-    n: "05",
-    title: "Receive Your $ALLOX Tokens",
+    n: "04",
+    title: "Receive Your ALLOX Tokens",
     desc: "Tokens unlock at TGE per your private plan, full unlock, partial TGE, or cliff + vesting.",
     icon: Gift,
   },
@@ -588,15 +584,15 @@ const SALE_MOMENTUM_HIGHLIGHTS = [
     accent: "#2dd4bf",
   },
   {
-    value: "$162.4M",
+    value: "$171M",
     label: "Cumulative DEX Aggregator Volume",
     detail: "Cumulative trading & on-chain volume",
     accent: "#fbbf24",
   },
   {
-    value: "312,000",
-    label: "Portfolios last 30 days",
-    detail: "On-chain portfolios created in the last 30 days",
+    value: "{onChainPortfolios}",
+    label: "On-chain Portfolios",
+    detail: "On-chain portfolios created on AlloX",
     accent: "#fb7185",
   },
 ];
@@ -634,9 +630,9 @@ const KEY_MILESTONES = [
     status: "completed",
   },
   {
-    title: "$162.4M Volume Reached",
-    metric: "$162.4M",
-    desc: "Crossed $162.4M in cumulative DEX Aggregator volume across 312,000 on-chain portfolios created in 30 days.",
+    title: "$171M Volume Reached",
+    metric: "$171M",
+    desc: "Crossed $171M in cumulative DEX Aggregator volume across {onChainPortfolios} on-chain portfolios.",
     status: "completed",
   },
   {
@@ -653,17 +649,6 @@ const KEY_MILESTONES = [
   },
 ];
 
-const MOCK_REFERRALS = [
-  { id: "0x4f2a…c91e", invested: 12500, reward: 375, date: "Jul 28" },
-  { id: "0x88bd…3a11", invested: 3200, reward: 96, date: "Jul 27" },
-  { id: "0x1c09…f44b", invested: 750, reward: 22, date: "Jul 26" },
-  { id: "0xa3e7…8801", invested: 50000, reward: 1500, date: "Jul 25" },
-  { id: "0x229f…d553", invested: 1000, reward: 30, date: "Jul 24" },
-  { id: "0x6b4c…0012", invested: 8000, reward: 240, date: "Jul 23" },
-  { id: "0xf77a…cc2d", invested: 200, reward: 6, date: "Jul 22" },
-  { id: "0x0e3b…9a4f", invested: 25000, reward: 750, date: "Jul 21" },
-];
-
 const TX_EXPLORERS = {
   Base: "https://basescan.org/tx/",
   Ethereum: "https://etherscan.io/tx/",
@@ -675,6 +660,9 @@ function shortenTxHash(hash) {
   if (!hash || hash.length < 12) return hash || "—";
   return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
 }
+
+// Public round target shown on the live stats bar (USD).
+const PUBLIC_ROUND_TARGET_USD = 1_000_000;
 
 // Whitelist allocation limits (USD)
 const WL_MIN_USD = 100;
@@ -697,17 +685,19 @@ const sanitizeUsdInput = (raw, max) => {
   return v;
 };
 
-const REF_AMOUNTS = [
-  "$100",
-  "$500",
-  "$1,000",
-  "$2,500",
-  "$5,000",
-  "$10,000",
-  "$25,000",
-  "$50,000",
-  "$100,000",
-];
+const REF_BIND_ERROR_MESSAGES = {
+  SELF_REFERRAL: "You can't use your own referral code.",
+  ALREADY_INVESTED:
+    "This wallet had already invested, so the referral code wasn't applied.",
+  BOUND_TO_ANOTHER_CODE:
+    "This wallet is already linked to another referral code.",
+  UNKNOWN_CODE: "This referral code doesn't exist.",
+};
+
+const shortWallet = (wallet) =>
+  wallet && wallet.length > 12
+    ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}`
+    : wallet || "—";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -814,7 +804,7 @@ const liveCountdownRenderer = ({
 };
 
 export function PublicSaleSonarPage() {
-  const [saleState, setSaleState] = useState("whitelist");
+  const [saleState, setSaleState] = useState("live");
   const [wlStep, setWlStep] = useState("connect");
   const [wlAmount, setWlAmount] = useState("");
   const [email, setEmail] = useState("");
@@ -852,7 +842,7 @@ export function PublicSaleSonarPage() {
   const [successCountdown, setSuccessCountdown] = useState(5);
   const [liveAmount, setLiveAmount] = useState("");
   const [liveSaleKind, setLiveSaleKind] = useState("public");
-  const [livePlanId, setLivePlanId] = useState("silver");
+  const [livePlanId, setLivePlanId] = useState("platinum");
   const [liveAsset, setLiveAsset] = useState("USDC");
   const [liveAssetOpen, setLiveAssetOpen] = useState(false);
   const [liveChainOpen, setLiveChainOpen] = useState(false);
@@ -860,29 +850,19 @@ export function PublicSaleSonarPage() {
   const [liveTermsOpen, setLiveTermsOpen] = useState(false);
   const [tiersOpen, setTiersOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [refTab, setRefTab] = useState("all");
   const [tiersExpanded, setTiersExpanded] = useState(true);
-  const totalRefRewards = MOCK_REFERRALS.reduce((s, r) => s + r.reward, 0);
-  const totalRefInvested = MOCK_REFERRALS.reduce((s, r) => s + r.invested, 0);
 
   const [data, setData] = useState(null);
-  const [commitData, setCommitData] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [registeredInfoOpen, setRegisteredInfoOpen] = useState(false);
   const [investHistoryOpen, setInvestHistoryOpen] = useState(false);
-  // Referral form modal
-  const [refFormOpen, setRefFormOpen] = useState(false);
-  const [refWallet, setRefWallet] = useState("");
-  const [refAmount, setRefAmount] = useState("");
-  const [refSubmitted, setRefSubmitted] = useState(false);
-  const [claimSuccess, setClaimSuccess] = useState(false);
   const balancePopupRef = useRef(null);
   const registeredInfoPopupRef = useRef(null);
   const liveAssetMenuRef = useRef(null);
   const liveChainMenuRef = useRef(null);
   const investHistoryPopupRef = useRef(null);
-  // Derive referral code from incoming URL param (mock: always ALLX-DEMO)
-  const incomingRefCode = "ALLX-DEMO7";
 
   useEffect(() => {
     if (
@@ -998,8 +978,8 @@ export function PublicSaleSonarPage() {
     (Boolean(sonar.entitiesError) || sonar.status?.tone === "red");
   // console.log("wlStatus", wlStatus);
   const saleOpen = wlStatus ? wlStatus.open !== false : true;
-  const minUsd = WL_MIN_USD;
-  const maxUsd = WL_MAX_USD;
+  const minUsd = Number(wlStatus?.minUsd) || WL_MIN_USD;
+  const maxUsd = Number(wlStatus?.maxUsd) || WL_MAX_USD;
   const walletBalanceUsd = wlStatus?.walletBalanceUsd ?? null;
   const balanceBreakdown = Array.isArray(wlStatus?.balanceBreakdown)
     ? wlStatus.balanceBreakdown
@@ -1022,13 +1002,10 @@ export function PublicSaleSonarPage() {
 
   const getData = async () => {
     try {
-      const [seasonRes, privateSaleRes] = await Promise.all([
-        fetch(`https://api.allox.ai/season1/stats`).then((r) => r.json()),
-        fetch(`https://api.allox.ai/private-sale/stats`).then((r) => r.json()),
-      ]);
-
+      const seasonRes = await fetch(`https://api.allox.ai/season1/stats`).then(
+        (r) => r.json(),
+      );
       setData(seasonRes);
-      setCommitData(privateSaleRes);
     } catch (error) {
       console.error("Error fetching stats:", error);
     }
@@ -1037,6 +1014,12 @@ export function PublicSaleSonarPage() {
   useEffect(() => {
     getData();
   }, []);
+  // Live count for the "{onChainPortfolios}" placeholder in the stat card and
+  // milestone copy.
+  const onChainPortfoliosText =
+    data?.stats?.onChainPortfoliosCreated != null
+      ? Number(data.stats.onChainPortfoliosCreated).toLocaleString("en-US")
+      : "—";
   // useEffect(() => {
   //   if (liveSaleKind === "private") {
   //     setSaleState("whitelist");
@@ -1054,10 +1037,57 @@ export function PublicSaleSonarPage() {
     // }
   }, [isConnected, liveSaleKind, wlStep]);
 
-  const refCode =
-    "ALLX" +
-    (walletAddress ? walletAddress.slice(2, 8).toUpperCase() : "A1B2C3");
-  const refLink = `app.allox.ai/publicsale?refCode=${refCode}`;
+  // Public sale backend: plans, stats, my position and the referral program.
+  const publicSale = usePublicSale();
+  const refCode = publicSale.referral?.refCode ?? null;
+  const refLink = publicSale.referralLink;
+  // Referred wallets plus form-only leads, newest first. A lead whose wallet is
+  // already referred is the same person. Anyone with money in is "invested";
+  // everyone else (including form leads, whose amount is only a pledge) is
+  // "invited".
+  const referredList = Array.isArray(publicSale.referral?.referred)
+    ? publicSale.referral.referred
+    : [];
+  const referredWallets = new Set(referredList.map((r) => r.wallet));
+  const referredInvestors = [
+    ...referredList.map((r) => ({
+      wallet: r.wallet,
+      investedUsd: Number(r.investedUsd) || 0,
+      rewardUsd: Number(r.commissionUsd) || 0,
+      at: r.at,
+    })),
+    ...(Array.isArray(publicSale.referral?.leads)
+      ? publicSale.referral.leads
+          .filter((l) => !referredWallets.has(l.wallet))
+          .map((l) => ({
+            wallet: l.wallet,
+            investedUsd: 0,
+            rewardUsd: 0,
+            at: l.at,
+          }))
+      : []),
+  ]
+    .map((r) => ({ ...r, status: r.investedUsd > 0 ? "invested" : "invited" }))
+    .sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+  const refInvestorCount = referredInvestors.filter(
+    (r) => r.status === "invested",
+  ).length;
+  const refVolumeUsd = referredInvestors.reduce((s, r) => s + r.investedUsd, 0);
+  const visibleReferrals =
+    refTab === "all"
+      ? referredInvestors
+      : referredInvestors.filter((r) => r.status === refTab);
+  const fmtRefUsd = (n) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const referredByCode = publicSale.position?.referredByCode ?? null;
+  const bindErrorMessage = publicSale.bindError
+    ? REF_BIND_ERROR_MESSAGES[publicSale.bindError.reason] ||
+      publicSale.bindError.message
+    : null;
+  const isOwnLandingCode =
+    publicSale.bindError?.reason === "SELF_REFERRAL" ||
+    (!!refCode &&
+      publicSale.landingRefCode?.toUpperCase() === refCode.toUpperCase());
 
   // Whitelist flow
   const wlNum = parseFloat(wlAmount) || 0;
@@ -1170,17 +1200,6 @@ export function PublicSaleSonarPage() {
     }
   };
 
-  const handleRefSubmit = () => {
-    if (!refWallet.startsWith("0x") || refWallet.length < 10 || !refAmount)
-      return;
-    setRefSubmitted(true);
-  };
-
-  const handleClaim = () => {
-    setClaimSuccess(true);
-    setTimeout(() => setClaimSuccess(false), 3000);
-  };
-
   // Lowering only helps when the balance still covers the minimum allocation.
   const canLowerToBalance =
     walletBalanceUsd != null && Math.floor(walletBalanceUsd) >= minUsd;
@@ -1206,7 +1225,14 @@ export function PublicSaleSonarPage() {
 
   // Live purchase
   // Sonar purchase flow for the public live sale (Ethereum SettlementSale).
+  // Report each bid to the backend as soon as the wallet confirms it.
+  const { recordCommit } = publicSale;
+  const handleBidSubmitted = useCallback(
+    (txHash, { tierId }) => recordCommit({ txHash, tierId }),
+    [recordCommit],
+  );
   const publicPurchase = useSonarPublicSalePurchase({
+    onBidSubmitted: handleBidSubmitted,
     entity: sonar.authenticated ? sonar.activeEntity : null,
     walletAddress,
     enabled:
@@ -1218,9 +1244,26 @@ export function PublicSaleSonarPage() {
     switchToSaleChain,
   });
   const isPrivateSale = liveSaleKind === "private";
-  const activePlans = isPrivateSale
-    ? privateSale.plansWithEligibility
-    : LIVE_PLANS;
+  // Unlock terms (TGE %, cliff, vesting) come from LIVE_PLANS; the API only
+  // has vague labels like "Cliff + vesting".
+  const publicPlans =
+    publicSale.plans.length > 0
+      ? publicSale.plans.map((p) => {
+          const local = LIVE_PLANS.find((l) => l.id === p.id);
+          return local
+            ? {
+                ...p,
+                tgePct: local.tgePct,
+                cliff: local.cliff,
+                vesting: local.vesting,
+              }
+            : p;
+        })
+      : LIVE_PLANS;
+  // Biggest discount first: Platinum, Gold, Silver.
+  const activePlans = [
+    ...(isPrivateSale ? privateSale.plans : publicPlans),
+  ].sort((a, b) => b.discount - a.discount);
   const activeSaleSteps = isPrivateSale
     ? PRIVATE_SALE_STEPS
     : PUBLIC_SALE_STEPS;
@@ -1260,52 +1303,93 @@ export function PublicSaleSonarPage() {
     Number(privateSelectedTierPosition?.allocationTokens) || 0;
   const privateTierUsd =
     Number(privateSelectedTierPosition?.contributedUsd) || 0;
-  // Confirmed position shown in the allocation panel. Public commitments are
-  // not split by plan on-chain, so the total is priced at the selected plan.
+  // Confirmed public position from GET /public-sale/position; falls back to
+  // the on-chain commitment priced at the selected plan while it loads.
+  const publicPosition = publicSale.position;
   const publicCommittedUsd = isPrivateSale
     ? 0
-    : Number(publicPurchase.committedTotal) || 0;
+    : publicPosition?.commitmentUsd != null
+      ? Number(publicPosition.commitmentUsd) || 0
+      : Number(publicPurchase.committedTotal) || 0;
+  const publicPositionTokens =
+    publicPosition?.allocationTokens != null
+      ? Number(publicPosition.allocationTokens) || 0
+      : livePlan?.price
+        ? publicCommittedUsd / livePlan.price
+        : 0;
   const positionUsd = isPrivateSale ? privateTierUsd : publicCommittedUsd;
   const positionTokens = isPrivateSale
     ? privateTierAllocation
-    : livePlan?.price
-      ? publicCommittedUsd / livePlan.price
-      : 0;
+    : publicPositionTokens;
   const hasPosition = positionTokens > 0 || positionUsd > 0;
   // Prefer live entry preview; fall back to the confirmed position.
   const estimateTokensRaw =
     liveTokensRaw <= 0 && positionTokens > 0 ? positionTokens : liveTokensRaw;
-  const liveTgeTokensRaw = (estimateTokensRaw * (livePlan?.tgePct ?? 0)) / 100;
+  // Showing the confirmed public position: use the backend's TGE/locked split.
+  const useApiPublicSplit =
+    !isPrivateSale &&
+    liveTokensRaw <= 0 &&
+    publicPosition?.availableAtTgeTokens != null &&
+    publicPosition?.lockedTokens != null;
+  const liveTgeTokensRaw = useApiPublicSplit
+    ? Number(publicPosition.availableAtTgeTokens) || 0
+    : (estimateTokensRaw * (livePlan?.tgePct ?? 0)) / 100;
+  const liveLockedTokensRaw = useApiPublicSplit
+    ? Number(publicPosition.lockedTokens) || 0
+    : estimateTokensRaw - liveTgeTokensRaw;
   const liveAllox =
     liveNum || positionTokens > 0
       ? formatCompactNumber(Math.floor(estimateTokensRaw))
       : "0";
   const liveTgeTokens = formatCompactNumber(Math.floor(liveTgeTokensRaw));
-  const liveLockedTokens = formatCompactNumber(
-    Math.floor(estimateTokensRaw - liveTgeTokensRaw),
-  );
+  const liveLockedTokens = formatCompactNumber(Math.floor(liveLockedTokensRaw));
   const pubPct = (320000 / 2500000) * 100;
 
   const switchLiveSaleKind = (kind) => {
     setLiveSaleKind(kind);
-    const nextPlans = kind === "private" ? privateSale.plans : LIVE_PLANS;
+    const nextPlans = kind === "private" ? privateSale.plans : publicPlans;
     if (nextPlans.length > 0 && !nextPlans.some((p) => p.id === livePlanId)) {
       setLivePlanId(nextPlans[0].id);
     }
   };
 
-  const copyRef = () => {
-    navigator.clipboard.writeText(refLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Referral data needs a connected wallet and a signed-in session: open the
+  // wallet modal first, then ask for the signature.
+  const signInForReferral = async () => {
+    if (!isConnected) {
+      dispatch(setWalletModal(true));
+      return;
+    }
+    try {
+      await ensureAuthenticated();
+    } catch (err) {
+      toast.error(err?.message || "Sign-in failed. Please try again.");
+    }
+  };
+
+  const copyRef = async () => {
+    if (!isConnected || !isAuthenticated) {
+      await signInForReferral();
+      return;
+    }
+    if (!refLink) return;
+    try {
+      await navigator.clipboard.writeText(refLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy the link. Please copy it manually.");
+    }
   };
 
   const WL_PRESETS = ["$100", "$500", "$1,000", "$5,000", "$10,000"];
   const LIVE_PRESETS = ["$100", "$500", "$1,000", "MAX"];
   const liveMinUsd = isPrivateSale
     ? privateSale.minContributionUsd
-    : WL_MIN_USD;
-  const liveMaxUsd = isPrivateSale ? privateSale.maxContributionUsd : 200_000;
+    : Number(publicSale.sale?.minCommitUsd) || WL_MIN_USD;
+  const liveMaxUsd = isPrivateSale
+    ? privateSale.maxContributionUsd
+    : Number(publicSale.sale?.maxCommitUsd) || 200_000;
   const publicLiveSonarReady =
     !sonar.configured ||
     (sonar.authenticated && sonarEligible && !sonarHasError);
@@ -1348,20 +1432,56 @@ export function PublicSaleSonarPage() {
       !liveInsufficientBalance &&
       liveNum >= liveMinUsd &&
       liveNum <= liveMaxUsd;
-  const publicInvestments = publicPurchase.committedByToken
-    .filter((row) => row.amount > 0)
-    .map((row) => ({
-      id: `commit-${row.symbol}`,
-      date: "Committed",
-      amount: row.amount,
-      token: row.symbol,
-      network: PUBLIC_SALE_CHAIN_NAME,
-      txHash:
-        publicPurchase.lastTxHash &&
-        row.symbol.toUpperCase() === liveAsset.toUpperCase()
-          ? publicPurchase.lastTxHash
-          : null,
-    }));
+  const publicTransactions = Array.isArray(publicPosition?.transactions)
+    ? publicPosition.transactions
+    : null;
+  // Backend transactions when available; otherwise the on-chain per-token
+  // commitment.
+  const publicInvestments = publicTransactions
+    ? [...publicTransactions]
+        .sort(
+          (a, b) =>
+            (Date.parse(b?.at || 0) || 0) - (Date.parse(a?.at || 0) || 0),
+        )
+        .map((tx, idx) => ({
+          id: tx.txHash || `tx-${idx}`,
+          date: tx.at
+            ? new Date(tx.at).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })
+            : "Committed",
+          amount: Number(tx.amountUsd ?? tx.amount) || 0,
+          token: String(tx.token || tx.symbol || "").toUpperCase(),
+          network: PUBLIC_SALE_CHAIN_NAME,
+          txHash: tx.txHash || null,
+          explorerUrl: tx.explorerUrl || null,
+          status: tx.status || null,
+        }))
+    : publicPurchase.committedByToken
+        .filter((row) => row.amount > 0)
+        .map((row) => ({
+          id: `commit-${row.symbol}`,
+          date: "Committed",
+          amount: row.amount,
+          token: row.symbol,
+          network: PUBLIC_SALE_CHAIN_NAME,
+          txHash:
+            publicPurchase.lastTxHash &&
+            row.symbol.toUpperCase() === liveAsset.toUpperCase()
+              ? publicPurchase.lastTxHash
+              : null,
+        }));
+  // Backend record of the bid just confirmed, for its explorer link + status.
+  const lastPublicTx =
+    publicPurchase.lastTxHash && publicTransactions
+      ? (publicTransactions.find(
+          (tx) =>
+            String(tx?.txHash || "").toLowerCase() ===
+            publicPurchase.lastTxHash.toLowerCase(),
+        ) ?? null)
+      : null;
   const PURCHASE_STEP_LABELS = {
     checking: "Checking eligibility with Sonar…",
     permit: "Getting purchase permit…",
@@ -1478,9 +1598,42 @@ export function PublicSaleSonarPage() {
           </div>
         </div> */}
 
+        {/* Referral landing (?refCode=) / "Referred by" */}
+        {/* {(referredByCode ||
+          (publicSale.landingRefCode && !isOwnLandingCode)) && (
+          <div
+            className="flex flex-wrap items-center gap-3 mt-2 p-3 rounded-2xl"
+            style={{
+              background: "rgba(99,102,241,0.07)",
+              border: "1px solid rgba(99,102,241,0.2)",
+            }}
+          >
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{
+                background: "linear-gradient(135deg, #818cf8, #6366f1)",
+              }}
+            >
+              <Gift className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                {referredByCode ? "Referred by" : "You were invited with code"}
+              </div>
+              <div className="text-sm font-black" style={{ color: "#6366f1" }}>
+                {referredByCode || publicSale.landingRefCode}
+              </div>
+              {bindErrorMessage && !referredByCode && (
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  {bindErrorMessage}
+                </p>
+              )}
+            </div>
+          </div>
+        )} */}
+
         {/* {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
-         
             <div className="flex p-1 bg-white/60 backdrop-blur-xl border border-white/60 rounded-xl shadow-sm mt-4 md:mt-0">
               {["whitelist", "live"].map((s) => (
                 <button
@@ -1592,7 +1745,7 @@ export function PublicSaleSonarPage() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                               >
-                                <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white border border-gray-200 shadow-sm">
+                                <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white hover:bg-gray-200 border border-gray-200 shadow-sm">
                                   <img
                                     src={esmaLogo}
                                     alt="ESMA"
@@ -1858,7 +2011,7 @@ export function PublicSaleSonarPage() {
                                   if (sonar.ready) sonar.connectSonar();
                                 }
                               }}
-                              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full w-fit bg-white text-gray-900 text-[11px] font-bold px-3 py-1.5 shadow-sm transition-colors ${
+                              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full w-fit bg-white hover:bg-gray-200 text-gray-900 text-[11px] font-bold px-3 py-1.5 shadow-sm transition-colors ${
                                 sonar.ready
                                   ? "cursor-pointer hover:bg-gray-100"
                                   : "opacity-50 cursor-not-allowed"
@@ -2017,17 +2170,22 @@ export function PublicSaleSonarPage() {
                 {liveSaleKind === "public" && saleState === "live" && (
                   <>
                     {(() => {
-                      const subscriptionX =
-                        commitData?.raisedUsd / commitData?.goalUsd;
-                      const targetBarPct = Math.min(
-                        (commitData?.raisedUsd / commitData?.goalUsd) * 100,
-                        100,
+                      const raisedUsd = Number(
+                        publicSale.stats?.raisedUsd ??
+                          publicSale.sale?.raisedUsd ??
+                          0,
                       );
+                      const contributors =
+                        publicSale.stats?.contributors ??
+                        publicSale.sale?.contributors ??
+                        null;
+                      const subscriptionX = raisedUsd / PUBLIC_ROUND_TARGET_USD;
+                      const targetBarPct = Math.min(subscriptionX * 100, 100);
                       const overflowBarPct = 100 - targetBarPct;
                       return (
                         <div className="glass-card px-5 py-4">
                           {/* Stats row */}
-                          <div className="grid grid-cols-3 divide-x divide-gray-100">
+                          <div className="grid grid-cols-2 divide-x divide-gray-100">
                             {/* Committed */}
                             <div className="min-w-0 pr-3">
                               <div className="flex items-center gap-1 mb-0.5">
@@ -2040,12 +2198,12 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
                               <p className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate">
-                                ${commitData?.raisedUsd.toLocaleString()}
+                                ${raisedUsd.toLocaleString()}
                               </p>
                             </div>
 
                             {/* Participants */}
-                            <div className="min-w-0 px-3 text-center">
+                            {/* <div className="min-w-0 px-3 text-center">
                               <div className="flex items-center justify-center gap-1 mb-0.5">
                                 <Users
                                   size={11}
@@ -2056,11 +2214,11 @@ export function PublicSaleSonarPage() {
                                 </p>
                               </div>
                               <p className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate">
-                                {commitData?.contributors != null
-                                  ? commitData.contributors.toLocaleString()
+                                {contributors != null
+                                  ? Number(contributors).toLocaleString()
                                   : "—"}
                               </p>
-                            </div>
+                            </div> */}
 
                             {/* Subscription multiplier */}
                             <div className="min-w-0 pl-3 text-right">
@@ -2100,10 +2258,14 @@ export function PublicSaleSonarPage() {
                             </div>
                             <div className="flex justify-between mt-1">
                               <span className="text-[10px] text-gray-500">
-                                ${commitData?.raisedUsd.toLocaleString()} raised
+                                ${raisedUsd.toLocaleString()} raised
                               </span>
                               <span className="text-[10px] text-gray-500">
-                                Round target: $1.00M
+                                Round target: $
+                                {(PUBLIC_ROUND_TARGET_USD / 1_000_000).toFixed(
+                                  2,
+                                )}
+                                M
                               </span>
                             </div>
                           </div>
@@ -2587,8 +2749,8 @@ export function PublicSaleSonarPage() {
                                                   <div className="flex items-start gap-2">
                                                     <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                                                     <p className="text-[11px] text-amber-800 leading-relaxed">
-                                                      Could not read balance, try
-                                                      again.
+                                                      Could not read balance,
+                                                      try again.
                                                     </p>
                                                   </div>
                                                   <button
@@ -2611,7 +2773,8 @@ export function PublicSaleSonarPage() {
                                                       : "Retry"}
                                                   </button>
                                                 </div>
-                                              ) : balanceBreakdown.length > 0 ? (
+                                              ) : balanceBreakdown.length >
+                                                0 ? (
                                                 <div className="space-y-1.5 mb-2.5">
                                                   {balanceBreakdown.map(
                                                     (row, i) => (
@@ -3132,90 +3295,21 @@ export function PublicSaleSonarPage() {
                         </div>
                       )}
 
-                      {isPrivateSale &&
-                        isConnected &&
-                        !isAuthenticated &&
-                        !privateSale.eligibilityLoading && (
-                          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
-                            <div className="flex items-start gap-3">
-                              <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                              <div className="min-w-0 flex-1">
-                                <h5 className="font-bold text-gray-900 mb-0.5">
-                                  Sign in to contribute
-                                </h5>
-                                <p className="text-sm text-gray-600">
-                                  Sign in to check eligibility and invest.
-                                </p>
-                              </div>
+                      {isPrivateSale && isConnected && !isAuthenticated && (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+                          <div className="flex items-start gap-3">
+                            <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <h5 className="font-bold text-gray-900 mb-0.5">
+                                Sign in to contribute
+                              </h5>
+                              <p className="text-sm text-gray-600">
+                                Sign in to invest.
+                              </p>
                             </div>
                           </div>
-                        )}
-
-                      {isPrivateSale &&
-                        isAuthenticated &&
-                        !privateSale.eligibilityLoading &&
-                        !privateSale.isEligible && (
-                          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-5">
-                            <div className="flex items-start gap-3">
-                              <Lock className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <h5 className="font-bold text-gray-900 mb-1">
-                                  Loyalty users only
-                                </h5>
-                                <p className="text-sm text-gray-600 mb-3">
-                                  The private sale is reserved for eligible
-                                  loyalty users. Complete the requirements below
-                                  to unlock access.
-                                </p>
-                                <ul className="space-y-2 text-sm">
-                                  <li
-                                    className={`flex items-center gap-2 ${privateSale.eligibility?.season1Claimed ? "text-emerald-700" : "text-gray-700"}`}
-                                  >
-                                    {privateSale.eligibility?.season1Claimed ? (
-                                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                    ) : (
-                                      <X className="w-4 h-4 text-red-400" />
-                                    )}
-                                    Claim Season 1 rewards
-                                  </li>
-                                  <li
-                                    className={`flex items-center gap-2 ${(privateSale.eligibility?.lifetimeVolumeUsd ?? 0) >= 10 ? "text-emerald-700" : "text-gray-700"}`}
-                                  >
-                                    {(privateSale.eligibility
-                                      ?.lifetimeVolumeUsd ?? 0) >= 10 ? (
-                                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                    ) : (
-                                      <X className="w-4 h-4 text-red-400" />
-                                    )}
-                                    $10+ lifetime trading volume
-                                    {(privateSale.eligibility
-                                      ?.lifetimeVolumeUsd ?? 0) > 0 && (
-                                      <span className="text-gray-400">
-                                        (current: $
-                                        {Number(
-                                          privateSale.eligibility
-                                            .lifetimeVolumeUsd,
-                                        ).toLocaleString(undefined, {
-                                          maximumFractionDigits: 2,
-                                        })}
-                                        )
-                                      </span>
-                                    )}
-                                  </li>
-                                </ul>
-                                {!privateSale.eligibility?.season1Claimed && (
-                                  <Link
-                                    to="/?welcomeBonus=1"
-                                    className="inline-flex items-center gap-1.5 mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                                  >
-                                    Claim Welcome Bonus
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </Link>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        </div>
+                      )}
 
                       <>
                         {/* Plan selector */}
@@ -3238,36 +3332,23 @@ export function PublicSaleSonarPage() {
                             <div className="grid sm:grid-cols-3 grid-cols-1 gap-2.5">
                               {activePlans.map((p) => {
                                 const selected = effectivePlanId === p.id;
-                                const tierLocked =
-                                  isPrivateSale &&
-                                  isAuthenticated &&
-                                  !privateSale.eligibilityLoading &&
-                                  p.tierEligible === false;
                                 return (
                                   <button
                                     key={`${liveSaleKind}-${p.id}`}
                                     type="button"
-                                    disabled={tierLocked}
                                     onClick={() =>
                                       isPrivateSale
                                         ? privateSale.setSelectedPlanId(p.id)
                                         : setLivePlanId(p.id)
                                     }
                                     className={`relative text-left p-3.5 rounded-2xl border-2 transition-all duration-200 ${
-                                      tierLocked
-                                        ? "border-gray-100 bg-gray-50/80 opacity-60 cursor-not-allowed"
-                                        : selected
-                                          ? isPrivateSale
-                                            ? "border-amber-500 bg-amber-50/80 shadow-[0_0_0_4px_rgba(245,158,11,0.12)] scale-[1.01]"
-                                            : "border-indigo-500 bg-indigo-50/70 shadow-[0_0_0_4px_rgba(99,102,241,0.12)] scale-[1.01]"
-                                          : "border-gray-200/80 bg-white/70 hover:border-indigo-300 hover:bg-white hover:shadow-md"
+                                      selected
+                                        ? isPrivateSale
+                                          ? "border-amber-500 bg-amber-50/80 shadow-[0_0_0_4px_rgba(245,158,11,0.12)] scale-[1.01]"
+                                          : "border-black bg-gray-50 shadow-[0_0_0_4px_rgba(0,0,0,0.08)] scale-[1.01]"
+                                        : "border-gray-200/80 bg-white/70 hover:border-gray-400 hover:bg-white hover:shadow-md"
                                     }`}
                                   >
-                                    {tierLocked && (
-                                      <span className="absolute -top-2 right-2 bg-gray-200 text-gray-600 text-[10px] font-black tracking-wide px-2 py-0.5 rounded-md">
-                                        LOCKED
-                                      </span>
-                                    )}
                                     {p.premium && (
                                       <span className="absolute -top-2 right-2 bg-amber-400 text-amber-950 text-[10px] font-black tracking-wide px-2 py-0.5 rounded-md shadow-sm">
                                         PREMIUM
@@ -3278,7 +3359,7 @@ export function PublicSaleSonarPage() {
                                         selected
                                           ? isPrivateSale
                                             ? "text-amber-950"
-                                            : "text-indigo-900"
+                                            : "text-black"
                                           : "text-gray-900"
                                       }`}
                                     >
@@ -3289,7 +3370,7 @@ export function PublicSaleSonarPage() {
                                         selected
                                           ? isPrivateSale
                                             ? "text-amber-700"
-                                            : "text-indigo-600"
+                                            : "text-black"
                                           : "text-gray-500"
                                       }`}
                                     >
@@ -3693,14 +3774,14 @@ export function PublicSaleSonarPage() {
                         {/* Public sale: Sonar purchase flow status */}
                         {!isPrivateSale && isConnected && (
                           <div className="flex flex-col gap-2">
-                            {publicPurchase.committedTotal > 0 && (
+                            {publicCommittedUsd > 0 && (
                               <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs">
                                 <span className="text-gray-500">
                                   Your current commitment
                                 </span>
                                 <span className="font-bold text-gray-900 tabular-nums">
                                   $
-                                  {publicPurchase.committedTotal.toLocaleString(
+                                  {publicCommittedUsd.toLocaleString(
                                     undefined,
                                     { maximumFractionDigits: 2 },
                                   )}
@@ -3709,7 +3790,7 @@ export function PublicSaleSonarPage() {
                                       {" "}
                                       → $
                                       {(
-                                        publicPurchase.committedTotal + liveNum
+                                        publicCommittedUsd + liveNum
                                       ).toLocaleString(undefined, {
                                         maximumFractionDigits: 2,
                                       })}{" "}
@@ -3857,10 +3938,18 @@ export function PublicSaleSonarPage() {
                                 <div className="min-w-0">
                                   <p className="text-xs font-semibold text-emerald-800">
                                     Commitment confirmed
+                                    {lastPublicTx?.status && (
+                                      <span className="ml-1.5 font-medium capitalize text-emerald-700">
+                                        · {lastPublicTx.status}
+                                      </span>
+                                    )}
                                   </p>
                                   {publicPurchase.lastTxHash && (
                                     <a
-                                      href={`${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`}
+                                      href={
+                                        lastPublicTx?.explorerUrl ||
+                                        `${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-0.5"
@@ -3938,9 +4027,12 @@ export function PublicSaleSonarPage() {
                                 .commit({
                                   amountUsd: liveAmount,
                                   tokenSymbol: liveAsset,
+                                  tierId: livePlan?.tierId,
                                 })
                                 .then((ok) => {
-                                  if (ok) setLiveAmount("");
+                                  if (!ok) return;
+                                  setLiveAmount("");
+                                  publicSale.refreshPosition();
                                 });
                               return;
                             }
@@ -3955,8 +4047,8 @@ export function PublicSaleSonarPage() {
                             privateSale.contribute();
                           }}
                           className={`w-full font-bold py-4 rounded-2xl text-base transition-all duration-200 ${
-                            (isPrivateSale && !isConnected) ||
-                            (isPrivateSale &&
+                            (!isPrivateSale && !isConnected) ||
+                            (!isPrivateSale &&
                               isConnected &&
                               !isAuthenticated) ||
                             (!isPrivateSale &&
@@ -3995,26 +4087,17 @@ export function PublicSaleSonarPage() {
                                                 liveInsufficientBalance
                                               ? `Insufficient ${liveAsset} balance`
                                               : isPrivateSale &&
-                                                  privateSale.eligibilityLoading
-                                                ? "Checking eligibility…"
-                                                : isPrivateSale &&
-                                                    !privateSale.isEligible
-                                                  ? "Not eligible"
-                                                  : isPrivateSale &&
-                                                      !privateSale.saleActive
-                                                    ? privateSale.saleEnded
-                                                      ? "Sale Ended"
-                                                      : "Sale Not Active"
-                                                    : isPrivateSale &&
-                                                        !privateSale.isSelectedTierEligible
-                                                      ? "Tier not available"
-                                                      : liveNum <= 0
-                                                        ? "Enter Amount"
-                                                        : liveNum < liveMinUsd
-                                                          ? `Minimum is $${liveMinUsd.toLocaleString()}`
-                                                          : liveNum > liveMaxUsd
-                                                            ? "Amount exceeds maximum"
-                                                            : "Invest"}
+                                                  !privateSale.saleActive
+                                                ? privateSale.saleEnded
+                                                  ? "Sale Ended"
+                                                  : "Sale Not Active"
+                                                : liveNum <= 0
+                                                  ? "Enter Amount"
+                                                  : liveNum < liveMinUsd
+                                                    ? `Minimum is $${liveMinUsd.toLocaleString()}`
+                                                    : liveNum > liveMaxUsd
+                                                      ? "Amount exceeds maximum"
+                                                      : "Invest"}
                         </button>
                       </>
                     </div>
@@ -4072,7 +4155,9 @@ export function PublicSaleSonarPage() {
                                           : publicInvestments
                                         ).length
                                       }{" "}
-                                      {isPrivateSale ? "tx" : "tokens"}
+                                      {isPrivateSale || publicTransactions
+                                        ? "tx"
+                                        : "tokens"}
                                     </span>
                                   </div>
 
@@ -4104,9 +4189,7 @@ export function PublicSaleSonarPage() {
                                         const amount = isPrivateSale
                                           ? inv.amountUsd
                                           : inv.amount;
-                                        const status = isPrivateSale
-                                          ? inv.status
-                                          : null;
+                                        const status = inv.status || null;
                                         const allocation = isPrivateSale
                                           ? Number(inv.allocationTokens) || 0
                                           : 0;
@@ -4142,7 +4225,15 @@ export function PublicSaleSonarPage() {
                                                 {status && (
                                                   <span
                                                     className={`ml-1.5 capitalize ${
-                                                      status === "verified"
+                                                      [
+                                                        "verified",
+                                                        "confirmed",
+                                                        "success",
+                                                      ].includes(
+                                                        String(
+                                                          status,
+                                                        ).toLowerCase(),
+                                                      )
                                                         ? "text-emerald-600"
                                                         : status === "pending"
                                                           ? "text-amber-600"
@@ -4181,7 +4272,10 @@ export function PublicSaleSonarPage() {
                                               </span>
                                               {txHash && (
                                                 <a
-                                                  href={`${explorer}${txHash}`}
+                                                  href={
+                                                    inv.explorerUrl ||
+                                                    `${explorer}${txHash}`
+                                                  }
                                                   target="_blank"
                                                   rel="noopener noreferrer"
                                                   className="inline-flex items-center gap-0.5 font-semibold text-indigo-600 hover:text-indigo-700 hover:underline underline-offset-2"
@@ -4218,7 +4312,7 @@ export function PublicSaleSonarPage() {
                         <button
                           type="button"
                           onClick={() => setLiveTermsOpen(true)}
-                          className="font-semibold text-sm text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
+                          className="font-semibold text-sm text-gray-500 hover:text-gray-700 underline underline-offset-2"
                         >
                           Sale Terms
                         </button>
@@ -4542,118 +4636,69 @@ export function PublicSaleSonarPage() {
             className="mb-4"
           >
             {/* Section header + Form button */}
-            <div className="flex items-center justify-between my-4">
+            <div className="flex items-center justify-between gap-3 my-4">
               <div>
-                <h3 className="text-lg font-black text-gray-900">
+                <h3 className="text-2xl font-black text-gray-900">
                   Referral Program
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Earn 3% on every investment your referrals make in real time.
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Earn ALLOX on every investment your referrals make.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setRefFormOpen(true);
-                  setRefSubmitted(false);
-                  setRefWallet("");
-                  setRefAmount("");
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                  color: "white",
-                  boxShadow: "0 4px 14px rgba(99,102,241,0.35)",
-                }}
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                Form
-              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* LEFT — Your referral link + earn info */}
-              <div className="glass-card p-6 flex flex-col gap-5">
-                {/* Headline */}
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                    }}
-                  >
-                    <Gift className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="font-black text-gray-900 text-sm">
-                      Share & Earn
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      3% commission on every referral investment
-                    </div>
-                  </div>
-                </div>
-
-                {/* How it works */}
-                <div className="space-y-2.5">
+            <div className="glass-card grid grid-cols-1 md:grid-cols-2 overflow-hidden">
+              {/* LEFT — how it works, link, stats */}
+              <div className="p-6 flex flex-col gap-5 border-b md:border-b-0 md:border-r border-gray-200">
+                <div className="space-y-3">
                   {[
-                    { step: "1", text: "Share your referral link with anyone" },
-                    {
-                      step: "2",
-                      text: "They invest in the $ALLOX Community Sale",
-                    },
-                    {
-                      step: "3",
-                      text: "You earn 3% of their investment instantly",
-                    },
-                  ].map((item) => (
-                    <div key={item.step} className="flex items-center gap-3">
-                      <div
-                        className="w-6 h-6 rounded-full font-black text-xs flex items-center justify-center flex-shrink-0 text-white"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                        }}
-                      >
-                        {item.step}
+                    "Share your referral link with anyone",
+                    "They invest in the ALLOX Community Sale",
+                    "You earn ALLOX on their investment",
+                  ].map((text, i) => (
+                    <div key={text} className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-full bg-indigo-900 text-white font-black text-xs flex items-center justify-center flex-shrink-0">
+                        {i + 1}
                       </div>
-                      <p className="text-sm text-gray-700">{item.text}</p>
+                      <p className="text-sm text-gray-800">{text}</p>
                     </div>
                   ))}
                 </div>
 
-                {/* Your link */}
                 <div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                  <div className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
                     Your Referral Link
                   </div>
-                  <div
-                    className="flex items-center gap-2 p-3 rounded-xl"
-                    style={{
-                      background: "rgba(99,102,241,0.07)",
-                      border: "1px solid rgba(99,102,241,0.18)",
-                    }}
-                  >
-                    <span className="text-xs text-gray-600 font-mono flex-1 truncate">
-                      {refLink}
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 min-w-0 truncate px-3 py-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700 font-mono">
+                      {refLink ||
+                        (!isConnected
+                          ? "Connect wallet to get your referral link"
+                          : !isAuthenticated
+                            ? "Sign in to get your referral link"
+                            : publicSale.referralLoading
+                              ? "Loading…"
+                              : "—")}
                     </span>
                     <button
                       onClick={copyRef}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0"
-                      style={{
-                        background: copied
-                          ? "#22c55e"
-                          : "linear-gradient(135deg, #818cf8, #6366f1)",
-                        color: "white",
-                      }}
+                      disabled={isConnected && isAuthenticated && !refLink}
+                      className={`flex items-center gap-1.5 px-4 py-3 rounded-xl text-sm font-bold text-white flex-shrink-0 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        copied ? "bg-green-500" : "bg-indigo-900"
+                      }`}
                     >
                       {copied ? (
                         <>
-                          <Check className="w-3 h-3" />
+                          <Check className="w-4 h-4" />
                           Copied!
                         </>
+                      ) : !isConnected ? (
+                        "Connect wallet"
+                      ) : !isAuthenticated ? (
+                        "Sign in"
                       ) : (
                         <>
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-4 h-4" />
                           Copy
                         </>
                       )}
@@ -4661,174 +4706,186 @@ export function PublicSaleSonarPage() {
                   </div>
                 </div>
 
-                {/* Stats strip */}
-                <div className="grid grid-cols-3 gap-3 mt-auto">
+                <div className="grid grid-cols-2 gap-2.5">
                   {[
                     {
-                      label: "Referrals",
-                      value: MOCK_REFERRALS.length.toString(),
+                      label: "Invited",
+                      value: referredInvestors.length.toLocaleString(),
                     },
                     {
-                      label: "Total Vol.",
-                      value: `$${(totalRefInvested / 1000).toFixed(1)}k`,
+                      label: "Investors",
+                      value: refInvestorCount.toLocaleString(),
                     },
+                    { label: "Total Volume", value: fmtRefUsd(refVolumeUsd) },
                     {
-                      label: "Earned (USDT)",
-                      value: `$${totalRefRewards.toLocaleString()}`,
+                      label: "Conversion",
+                      value: `${
+                        referredInvestors.length
+                          ? Math.round(
+                              (refInvestorCount / referredInvestors.length) *
+                                100,
+                            )
+                          : 0
+                      }%`,
                     },
                   ].map((s) => (
                     <div
                       key={s.label}
-                      className="rounded-xl px-3 py-2.5 text-center"
-                      style={{
-                        background: "rgba(99,102,241,0.06)",
-                        border: "1px solid rgba(99,102,241,0.12)",
-                      }}
+                      className="rounded-xl px-4 py-3 bg-gray-50"
                     >
-                      <div className="text-base font-black text-gray-900">
+                      <div className="text-xs text-gray-500">{s.label}</div>
+                      <div className="text-xl font-black text-gray-900">
                         {s.value}
-                      </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">
-                        {s.label}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* RIGHT — Referral list + claim */}
-              <div className="glass-card p-6 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="font-black text-gray-900 text-sm">
+              {/* RIGHT — referred investors */}
+              <div className="p-6 flex flex-col gap-3 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-black text-gray-900 text-lg">
                     Referred Investors
                   </div>
-                  <div
-                    className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full"
-                    style={{
-                      background: "rgba(99,102,241,0.1)",
-                      color: "#6366f1",
-                    }}
-                  >
-                    {MOCK_REFERRALS.length} users
+                  <div className="flex p-1 rounded-xl bg-gray-100">
+                    {[
+                      ["all", "All", referredInvestors.length],
+                      ["invested", "Invested", refInvestorCount],
+                      [
+                        "invited",
+                        "Invited",
+                        referredInvestors.length - refInvestorCount,
+                      ],
+                    ].map(([key, label, count]) => (
+                      <button
+                        key={key}
+                        onClick={() => setRefTab(key)}
+                        className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-all ${
+                          refTab === key
+                            ? "bg-white font-bold text-gray-900 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        {label} <span className="text-gray-500">{count}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Scrollable list */}
-                <div
-                  className="overflow-y-auto flex-1 space-y-1.5 pr-1"
-                  style={{ maxHeight: "240px" }}
-                >
-                  {/* Header row */}
-                  <div className="grid grid-cols-3 px-3 pb-1 border-b border-black/5">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                      Wallet ID
-                    </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 text-center">
-                      Invested
-                    </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 text-right">
-                      Your 3%
-                    </span>
-                  </div>
-                  {MOCK_REFERRALS.map((r, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, x: 8 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      viewport={{ once: true }}
-                      transition={{ delay: i * 0.05, duration: 0.2 }}
-                      className="grid grid-cols-3 items-center px-3 py-2.5 rounded-xl"
-                      style={{
-                        background:
-                          i % 2 === 0 ? "rgba(0,0,0,0.02)" : "transparent",
-                        border: "1px solid transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background =
-                          "rgba(99,102,241,0.06)";
-                        e.currentTarget.style.border =
-                          "1px solid rgba(99,102,241,0.12)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background =
-                          i % 2 === 0 ? "rgba(0,0,0,0.02)" : "transparent";
-                        e.currentTarget.style.border = "1px solid transparent";
-                      }}
-                    >
-                      <div>
-                        <div className="text-xs font-mono font-semibold text-gray-700">
-                          {r.id}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          {r.date}
-                        </div>
-                      </div>
-                      <div className="text-xs font-bold text-gray-800 text-center">
-                        ${r.invested.toLocaleString()}
-                      </div>
-                      <div
-                        className="text-xs font-black text-right"
-                        style={{ color: "#6366f1" }}
-                      >
-                        +${r.reward}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {/* Pending rewards + claim */}
-                <div
-                  className="rounded-xl p-4 flex items-center justify-between gap-4"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(129,140,248,0.1), rgba(99,102,241,0.08))",
-                    border: "1px solid rgba(99,102,241,0.2)",
-                  }}
-                >
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
-                      Pending Rewards
+                {visibleReferrals.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-12">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center mb-3">
+                      <UserPlus className="w-5 h-5 text-indigo-700" />
                     </div>
-                    <div
-                      className="text-xl font-black"
-                      style={{ color: "#6366f1" }}
-                    >
-                      ${totalRefRewards.toLocaleString()} USDT
+                    <div className="font-black text-gray-900">
+                      {!isAuthenticated
+                        ? "Sign in to see your referrals"
+                        : publicSale.referralLoading
+                          ? "Loading referrals…"
+                          : "No referrals yet"}
                     </div>
-                  </div>
-                  <AnimatePresence mode="wait">
-                    {claimSuccess ? (
-                      <motion.div
-                        key="claimed"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-black"
-                        style={{ background: "#22c55e", color: "white" }}
-                      >
-                        <Check className="w-4 h-4" /> Claimed!
-                      </motion.div>
-                    ) : (
-                      <motion.button
-                        key="claim"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        onClick={handleClaim}
-                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-black transition-all hover:opacity-90 active:scale-95"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                          color: "white",
-                          boxShadow: "0 4px 14px rgba(99,102,241,0.3)",
-                        }}
-                      >
-                        <Award className="w-4 h-4" />
-                        Claim
-                      </motion.button>
+                    {isAuthenticated && !publicSale.referralLoading && (
+                      <p className="text-sm text-gray-500 mt-1 max-w-xs">
+                        Share your link. Everyone who joins with it shows up
+                        here.
+                      </p>
                     )}
-                  </AnimatePresence>
-                </div>
+                  </div>
+                ) : (
+                  <div className="overflow-auto max-h-[298px]">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 z-10 bg-white">
+                        <tr className="border-b border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                          <th className="py-2 pr-2 text-left font-bold">
+                            Wallet
+                          </th>
+                          <th className="py-2 px-2 text-left font-bold">
+                            Status
+                          </th>
+                          <th className="py-2 px-2 text-right font-bold">
+                            Invested
+                          </th>
+                          <th className="py-2 pl-2 text-right font-bold whitespace-nowrap">
+                            Your Reward
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleReferrals.map((r, i) => (
+                          <tr key={i} className="border-b border-gray-100">
+                            <td className="py-3 pr-2">
+                              <div className="font-mono font-semibold text-gray-900 text-xs sm:text-sm">
+                                {shortWallet(r.wallet)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {r.at
+                                  ? new Date(r.at).toLocaleDateString(
+                                      undefined,
+                                      {
+                                        month: "short",
+                                        day: "numeric",
+                                        year: "numeric",
+                                      },
+                                    )
+                                  : ""}
+                              </div>
+                            </td>
+                            <td className="py-3 px-2">
+                              <span
+                                className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                  r.status === "invested"
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-gray-100 text-gray-600"
+                                }`}
+                              >
+                                {r.status === "invested"
+                                  ? "Invested"
+                                  : "Invited"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 text-right font-semibold text-gray-900">
+                              {fmtRefUsd(r.investedUsd)}
+                            </td>
+                            <td
+                              className={`py-3 pl-2 text-right font-bold ${
+                                r.rewardUsd > 0
+                                  ? "text-indigo-700"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              {r.rewardUsd > 0 ? "+" : ""}
+                              {fmtRefUsd(r.rewardUsd)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="sticky bottom-0 bg-white">
+                        <tr className="font-black">
+                          <td className="pt-3 text-gray-900" colSpan={2}>
+                            Total
+                          </td>
+                          <td className="pt-3 px-2 text-right text-gray-900">
+                            {fmtRefUsd(
+                              visibleReferrals.reduce(
+                                (s, r) => s + r.investedUsd,
+                                0,
+                              ),
+                            )}
+                          </td>
+                          <td className="pt-3 pl-2 text-right text-indigo-700">
+                            {fmtRefUsd(
+                              visibleReferrals.reduce(
+                                (s, r) => s + r.rewardUsd,
+                                0,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -5018,7 +5075,10 @@ export function PublicSaleSonarPage() {
                           </div>
                         )}
                         <p className="text-sm text-white/45 leading-relaxed">
-                          {milestone.desc}
+                          {milestone.desc.replace(
+                            "{onChainPortfolios}",
+                            onChainPortfoliosText,
+                          )}
                         </p>
                       </div>
                     </motion.div>
@@ -5297,7 +5357,7 @@ export function PublicSaleSonarPage() {
               {/* Table */}
               <div className="flex-1 overflow-x-auto">
                 <div className="flex sm:flex-row flex-col items-center justify-between px-5 pt-4 pb-2 border-b border-gray-100">
-                  <h3 className="text-base font-bold">$ALLOX Tokenomics</h3>
+                  <h3 className="text-base font-bold">ALLOX Tokenomics</h3>
                   <span className="text-xs text-gray-400">
                     1,000,000,000 supply
                   </span>
@@ -5650,13 +5710,16 @@ export function PublicSaleSonarPage() {
                       className="text-2xl font-bold mb-0.5"
                       style={{ color: "#ffffff" }}
                     >
-                      {formatCompactNumber(data?.stats?.portfoliosCreated30d)}+
+                      {formatCompactNumber(
+                        data?.stats?.onChainPortfoliosCreated,
+                      )}
+                      +
                     </div>
                     <div
                       className="text-xs"
                       style={{ color: "rgba(255,255,255,0.4)" }}
                     >
-                      Portfolios Created (30d)
+                      On-chain Portfolios
                     </div>
                   </motion.div>
                   <motion.div
@@ -5953,7 +6016,10 @@ export function PublicSaleSonarPage() {
                     className="text-4xl sm:text-5xl font-black tracking-tight mb-2 tabular-nums"
                     style={{ color: stat.accent }}
                   >
-                    {stat.value}
+                    {stat.value.replace(
+                      "{onChainPortfolios}",
+                      onChainPortfoliosText,
+                    )}
                   </div>
                   <div className="text-sm sm:text-base font-bold text-white mb-1 leading-snug">
                     {stat.label}
@@ -5995,276 +6061,6 @@ export function PublicSaleSonarPage() {
             onClose={() => setLiveTermsOpen(false)}
             // onAccept={() => setLiveTermsAccepted(true)}
           />
-        )}
-      </AnimatePresence>
-
-      {/* ══ REFERRAL FORM MODAL ══ */}
-      <AnimatePresence>
-        {refFormOpen && (
-          <motion.div
-            key="ref-modal-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{
-              background: "rgba(0,0,0,0.55)",
-              backdropFilter: "blur(6px)",
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setRefFormOpen(false);
-                setRefSubmitted(false);
-              }
-            }}
-          >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0, y: 16 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.92, opacity: 0, y: 16 }}
-              transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="relative w-full max-w-sm rounded-3xl overflow-hidden bg-white border border-black/10"
-              style={{
-                boxShadow: "0 32px 80px rgba(0,0,0,0.25)",
-              }}
-            >
-              {/* Top gradient bar */}
-              <div
-                className="h-1.5 w-full"
-                style={{
-                  background:
-                    "linear-gradient(90deg, #818cf8, #6366f1, #22d3ee)",
-                }}
-              />
-
-              <div className="p-6">
-                {/* Close */}
-                <button
-                  onClick={() => {
-                    setRefFormOpen(false);
-                    setRefSubmitted(false);
-                  }}
-                  className="absolute top-2 right-1 w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-gray-100 text-black/40"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-
-                {/* Always-visible referral code badge */}
-                <div
-                  className="flex items-center gap-3 mb-6 p-3 rounded-2xl"
-                  style={{
-                    background: "rgba(99,102,241,0.07)",
-                    border: "1px solid rgba(99,102,241,0.2)",
-                  }}
-                >
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                    }}
-                  >
-                    <Gift className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                      Referral Code
-                    </div>
-                    <div
-                      className="text-sm font-black"
-                      style={{ color: "#6366f1" }}
-                    >
-                      {incomingRefCode}
-                    </div>
-                  </div>
-                  <div
-                    className="text-[10px] font-semibold px-2 py-1 rounded-lg"
-                    style={{
-                      background: "rgba(99,102,241,0.12)",
-                      color: "#6366f1",
-                    }}
-                  >
-                    Active
-                  </div>
-                </div>
-
-                <AnimatePresence mode="wait">
-                  {refSubmitted ? (
-                    <motion.div
-                      key="success"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      className="flex flex-col items-center text-center py-6 gap-4"
-                    >
-                      <div
-                        className="w-16 h-16 rounded-full flex items-center justify-center"
-                        style={{
-                          background: "rgba(34,197,94,0.1)",
-                          border: "2px solid #22c55e",
-                        }}
-                      >
-                        <CheckCircle
-                          className="w-8 h-8"
-                          style={{ color: "#22c55e" }}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xl font-black text-gray-900 mb-1">
-                          Submitted!
-                        </div>
-                        <p className="text-sm text-gray-500">
-                          Your contribution request has been received.
-                          <br />
-                          You will receive a confirmation shortly.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setRefFormOpen(false);
-                          setRefSubmitted(false);
-                        }}
-                        className="w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                          color: "white",
-                        }}
-                      >
-                        Close
-                      </button>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="form"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="space-y-4"
-                    >
-                      <div>
-                        <h4 className="text-lg font-black text-gray-900 mb-0.5">
-                          Join the Sale
-                        </h4>
-                        <p className="text-xs text-gray-500">
-                          Enter your wallet and select an investment amount.
-                        </p>
-                      </div>
-
-                      {/* Wallet address */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1.5">
-                          Wallet Address
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="0x..."
-                          value={refWallet}
-                          onChange={(e) => setRefWallet(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl text-sm font-mono outline-none transition-all"
-                          style={{
-                            background: "rgba(0,0,0,0.03)",
-                            border:
-                              refWallet &&
-                              (!refWallet.startsWith("0x") ||
-                                refWallet.length < 10)
-                                ? "1.5px solid #f87171"
-                                : refWallet.length >= 10
-                                  ? "1.5px solid #22c55e"
-                                  : "1.5px solid rgba(0,0,0,0.1)",
-                          }}
-                        />
-                        {refWallet && !refWallet.startsWith("0x") && (
-                          <p className="text-[11px] text-red-500 mt-1">
-                            Must start with 0x
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Amount dropdown */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1.5">
-                          Investment Amount (USDT)
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={refAmount}
-                            onChange={(e) => setRefAmount(e.target.value)}
-                            className="w-full appearance-none px-4 py-3 rounded-xl text-sm font-semibold outline-none transition-all pr-10"
-                            style={{
-                              background: "rgba(0,0,0,0.03)",
-                              border: refAmount
-                                ? "1.5px solid #22c55e"
-                                : "1.5px solid rgba(0,0,0,0.1)",
-                              color: refAmount ? "#111" : "#9ca3af",
-                            }}
-                          >
-                            <option value="" disabled>
-                              Select amount…
-                            </option>
-                            {REF_AMOUNTS.map((a) => (
-                              <option key={a} value={a}>
-                                {a}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-400" />
-                        </div>
-                      </div>
-
-                      {/* Tier preview if amount selected */}
-                      {refAmount &&
-                        (() => {
-                          const num = parseFloat(
-                            refAmount.replace(/[$,]/g, ""),
-                          );
-                          const tier = [...TIERS]
-                            .reverse()
-                            .find((t) => num >= t.minAmount);
-                          return tier && tier.bonusNum > 0 ? (
-                            <div
-                              className="flex items-center gap-2 p-3 rounded-xl"
-                              style={{
-                                background: "rgba(34,197,94,0.07)",
-                                border: "1px solid rgba(34,197,94,0.25)",
-                              }}
-                            >
-                              <Award
-                                className="w-4 h-4 flex-shrink-0"
-                                style={{ color: "#22c55e" }}
-                              />
-                              <p className="text-xs font-semibold text-green-800">
-                                You qualify for{" "}
-                                <span className="font-black">
-                                  +{tier.bonusNum}% bonus tokens
-                                </span>{" "}
-                                at this amount ({tier.label}).
-                              </p>
-                            </div>
-                          ) : null;
-                        })()}
-
-                      <button
-                        onClick={handleRefSubmit}
-                        disabled={
-                          !refWallet.startsWith("0x") ||
-                          refWallet.length < 10 ||
-                          !refAmount
-                        }
-                        className="w-full py-3.5 rounded-xl font-black text-sm transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                          color: "white",
-                        }}
-                      >
-                        Submit
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
     </>

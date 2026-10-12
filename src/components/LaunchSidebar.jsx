@@ -12,7 +12,6 @@ import {
 import { useCheckin } from "../hooks/useCheckin";
 import { openCheckinModal } from "../redux/slices/walletSlice";
 import { useAuth } from "../hooks/useAuth";
-import { usePrivateSaleAccess } from "../hooks/usePrivateSaleAccess";
 import { SidebarPromoSlider } from "./SidebarPromoSlider";
 import {
   setCurrentMessages,
@@ -30,18 +29,12 @@ export function LaunchSidebar() {
   const hasChatContent = currentMessages?.length > 0;
   const checkinStatus = useSelector((state) => state.checkin?.status);
   const { isAuthenticated } = useAuth();
-  const {
-    canAccess: canAccessPrivateSale,
-    showLoyaltyCheck,
-  } = usePrivateSaleAccess();
 
   const { checkedInToday } = useCheckin();
 
   const sidebarRows = useMemo(() => {
     const filtered = navigationTabs.filter((t) => {
       if (portfolioSidebarNavIds.has(t.id)) return false;
-      if (t.id === "publicSales" && !canAccessPrivateSale) return false;
-      if (t.id === "loyaltyCheck" && !showLoyaltyCheck) return false;
       return true;
     });
     const out = [];
@@ -52,7 +45,7 @@ export function LaunchSidebar() {
       }
     }
     return out;
-  }, [canAccessPrivateSale, showLoyaltyCheck]);
+  }, []);
 
   const lastClaimed = useMemo(() => {
     const rewards = checkinStatus?.rewards ?? [];

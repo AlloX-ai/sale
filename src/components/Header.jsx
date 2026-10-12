@@ -26,7 +26,6 @@ import {
   privateSaleNavButtonStyle,
 } from "../constants/navigation";
 import { PortfolioNavGroup } from "./PortfolioNavGroup";
-import { usePrivateSaleAccess } from "../hooks/usePrivateSaleAccess";
 import OutsideClickHandler from "react-outside-click-handler";
 import {
   findSeason2RewardForWallet,
@@ -73,10 +72,6 @@ export function Header({
   );
   const { checkedInToday } = useCheckin();
   const { user: authUser, isAuthenticated } = useAuth();
-  const {
-    canAccess: canAccessPrivateSale,
-    showLoyaltyCheck,
-  } = usePrivateSaleAccess();
 
   // Each gem is worth $5 in this UI. Referral earnings arrive from `/auth/me`
   // as USD, so we convert them back into gems to fold them into the total.
@@ -114,9 +109,7 @@ export function Header({
     const filtered = navigationTabs.filter(
       (t) =>
         !["history", "trading", "staking"].includes(t.id) &&
-        !portfolioSidebarNavIds.has(t.id) &&
-        !(t.id === "publicSales" && !canAccessPrivateSale) &&
-        !(t.id === "loyaltyCheck" && !showLoyaltyCheck),
+        !portfolioSidebarNavIds.has(t.id),
     );
     const out = [];
     for (const t of filtered) {
@@ -126,7 +119,7 @@ export function Header({
       }
     }
     return out;
-  }, [canAccessPrivateSale, showLoyaltyCheck]);
+  }, []);
 
   const handleOpenCheckinModal = () => {
     dispatch(openCheckinModal());
