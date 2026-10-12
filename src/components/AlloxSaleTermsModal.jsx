@@ -7,7 +7,7 @@ const SECTIONS = [
     paragraphs: [
       {
         id: "1.1",
-        text: "The Issuer is offering ALLOX tokens (“ALLOX” or the “Tokens”) under a multi-tier pricing and vesting structure based on Fully Diluted Valuation (FDV) plans and vesting options, as set forth in the pricing schedule on the Sale Site, for an initial target of approximately US$2,000,000 in aggregate proceeds (the “Sale”). The initial Token allocation for the Sale is expected to represent approximately 3% of the total Token supply of 1,000,000,000 ALLOX. Depending on demand, the mix of selected FDV / vesting tiers, and committed amounts, the Issuer may increase the Token allocation for the Sale up to approximately 6% of the total Token supply.",
+        text: "The Issuer is offering ALLOX tokens (“ALLOX” or the “Tokens”) under a multi-tier pricing and vesting structure based on Fully Diluted Valuation (FDV) plans and vesting options, as set forth in the pricing schedule on the Sale Site, for an initial target of approximately US$1,000,000 in aggregate proceeds (the “Sale”). The initial Token allocation for the Sale is expected to represent approximately 3% of the total Token supply of 1,000,000,000 ALLOX. Depending on demand, the mix of selected FDV / vesting tiers, and committed amounts, the Issuer may increase the Token allocation for the Sale up to approximately 6% of the total Token supply.",
       },
       {
         id: "1.2",
@@ -110,6 +110,10 @@ const SECTIONS = [
       {
         id: "6.2",
         text: "You are solely responsible for your wallet, keys, and address accuracy. Delivery to your confirmed address discharges the Issuer’s delivery obligation in full.",
+      },
+      {
+        id: "6.3",
+        text: "Forced lockup for U.S. Persons. If you are a “U.S. Person” (as defined in Regulation S under the U.S. Securities Act of 1933, as amended), your Tokens are subject to a mandatory vesting lockup, regardless of the plan (tier) you select. This lockup is recorded against your purchase commitment and is applied by the Issuer at token distribution; Tokens subject to it will not be delivered or made transferable until the lockup period specified on the Sale Site has ended. Where the lockup is longer than the lock or vesting schedule of your selected plan, the lockup prevails.",
       },
     ],
   },
@@ -281,7 +285,7 @@ export function AlloxSaleTermsModal({
               ALLOX Token Sale Terms
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              Last updated: August 12, 2026
+              Last updated: October 12, 2026
             </p>
           </div>
           <button
