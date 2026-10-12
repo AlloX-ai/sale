@@ -480,12 +480,12 @@ const UTILITIES = [
 ];
 
 const CREDIBILITY = [
-  "Audited by CertiK, one of the industry's leading blockchain security firms, with the audit badge displayed directly on the platform",
-  "AI continuously scans markets and creates your portfolio automatically",
-  "Choose your risk level (High, Mid, or Low market cap) and get a diversified basket built around it",
-  "Portfolios track live narratives, so allocations shift as market themes shift, not just prices",
-  "Fully on-chain and non-custodial: assets stay in your wallet, AlloX never takes custody",
-  "Live across 12+ wallets and 3 chains (BNB Chain, Base, Ethereum), so users aren't locked into one ecosystem",
+  "We're audited by CertiK, and you can see the badge right on our platform.",
+  "Our AI keeps scanning the market and builds your portfolio for you.",
+  "Pick your risk level (High, Mid or Low market cap) and we build a diversified basket around it.",
+  "Your portfolio follows live narratives, so it adjusts when market themes change, not only when prices move.",
+  "Everything stays on-chain and in your wallet. We never hold your assets.",
+  "We're live on 12+ wallets and 3 chains (BNB Chain, Base, Ethereum), so you're never stuck in one ecosystem.",
 ];
 
 const DEX_VOLUME = [
@@ -514,31 +514,31 @@ const PUBLIC_SALE_STEPS = [
   {
     n: "01",
     title: "Create Your Account",
-    desc: "Sign up through Sonar and complete onboarding to prepare for participation.",
+    desc: "Sign up with Sonar and finish onboarding.",
     icon: UserPlus,
   },
   {
     n: "02",
     title: "Connect Your Wallet",
-    desc: "Connect your wallet. This wallet is used for your contribution and token allocation.",
+    desc: "This is the wallet you'll contribute from and receive your ALLOX in.",
     icon: Wallet,
   },
   {
     n: "03",
-    title: "Complete verification",
-    desc: "Pass Sonar's identity and eligibility checks. Once approved, you'll be authorized to join the ALLOX sale.",
+    title: "Get verified",
+    desc: "Sonar checks your identity and eligibility. Once you're approved, you can join.",
     icon: Shield,
   },
   {
     n: "04",
-    title: "Participate in the Sale",
-    desc: "Select the amount you wish to contribute during the active sale window.",
+    title: "Contribute",
+    desc: "Choose how much you want to put in while the sale is open.",
     icon: DollarSign,
   },
   {
     n: "05",
-    title: "Receive Your ALLOX Tokens",
-    desc: "Your allocated tokens will be distributed at the Token Generation Event (TGE).",
+    title: "Receive your ALLOX",
+    desc: "We send your tokens at the Token Generation Event (TGE).",
     icon: Gift,
   },
 ];
@@ -574,7 +574,7 @@ const SALE_MOMENTUM_HIGHLIGHTS = [
   {
     value: "$0.7M+",
     label: "Revenue",
-    detail: "Platform revenue generated to date",
+    detail: "Revenue our platform has generated so far",
     accent: "#818cf8",
   },
   {
@@ -586,13 +586,13 @@ const SALE_MOMENTUM_HIGHLIGHTS = [
   {
     value: "$171M",
     label: "Cumulative DEX Aggregator Volume",
-    detail: "Cumulative trading & on-chain volume",
+    detail: "Trading and on-chain volume through our aggregator",
     accent: "#fbbf24",
   },
   {
     value: "{onChainPortfolios}",
     label: "On-chain Portfolios",
-    detail: "On-chain portfolios created on AlloX",
+    detail: "Portfolios our users created on-chain",
     accent: "#fb7185",
   },
 ];
@@ -608,43 +608,43 @@ const KEY_MILESTONES = [
   {
     title: "Project Launch",
     metric: "Feb 23, 2026",
-    desc: "AlloX soft-launched, opening the platform to its first wave of users and on-chain activity.",
+    desc: "We opened AlloX to our first users and started building on-chain activity.",
     status: "completed",
   },
   {
     title: "First Revenue",
     metric: "Apr 15, 2026",
-    desc: "AlloX's first on-chain revenue-generating product went live, kicking off the platform's on-chain track record.",
+    desc: "Our first revenue generating product went live on-chain.",
     status: "completed",
   },
   {
     title: "Binance Wallet Booster",
     metric: "1 of 20",
-    desc: "Selected from 650+ Binance Alpha tokens to run an exclusive Booster campaign under Binance's Booster format.",
+    desc: "Binance picked us from 650+ Binance Alpha tokens to run an exclusive Booster campaign.",
     status: "completed",
   },
   {
     title: "Funding Round Closed",
     metric: "Funded",
-    desc: "Closed with Zerra Ventures, one of the largest venture capital firms in Turkey.",
+    desc: "We closed our round with Zerra Ventures, one of the largest venture capital firms in Turkey.",
     status: "completed",
   },
   {
     title: "$171M Volume Reached",
     metric: "$171M",
-    desc: "Crossed $171M in cumulative DEX Aggregator volume across {onChainPortfolios} on-chain portfolios.",
+    desc: "Our DEX aggregator passed $171M in cumulative volume, with 312,000 portfolios created in 30 days.",
     status: "completed",
   },
   {
     title: "Wallets Registered",
     metric: "2.6M+",
-    desc: "Registered wallets crossed 2.6 million, including 86.29K KYC-verified users from Binance.",
+    desc: "More than 2.6 million wallets have joined us, including 86.29K KYC verified users from Binance.",
     status: "completed",
   },
   {
     title: "Public Token Sale",
     metric: "FDV $65M",
-    desc: "The AlloX Public Token Sale. Subscribe to a stake in the AI-driven capital allocation layer for modern crypto markets.",
+    desc: "Our public token sale is open. Join us at the earliest stage.",
     status: "active",
   },
 ];
@@ -4565,11 +4565,11 @@ export function PublicSaleSonarPage() {
                         </span>
                       </div>
                       <h3 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight">
-                        Five steps, zero uncertainty.
+                        How to join our public sale
                       </h3>
                       <p className="mt-3 text-sm sm:text-base text-white/50 leading-relaxed max-w-2xl">
-                        A transparent path from Sonar verification to tokens, so
-                        you always know what to expect.
+                        We run the sale with Sonar, so you know exactly what
+                        happens from sign up to receiving your tokens.
                       </p>
                     </div>
 
@@ -4959,15 +4959,14 @@ export function PublicSaleSonarPage() {
               <div className="flex items-center gap-3 mb-3">
                 <span className="h-px w-6 bg-indigo-400" />
                 <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">
-                  Key milestones
+                  OUR JOURNEY
                 </span>
               </div>
               <h3 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight">
-                Execution momentum.
+              What we've built so far
               </h3>
               <p className="mt-3 text-sm sm:text-base text-white/50 leading-relaxed max-w-2xl">
-                From first on-chain product to token sale, a track record of
-                shipping and scaling real capital allocation infrastructure.
+                We launched in February 2026 and haven't stopped shipping. Here's where we are today.
               </p>
             </div>
 
@@ -5472,8 +5471,8 @@ export function PublicSaleSonarPage() {
           <div className="glass-card p-6 mb-4">
             <h3 className="text-xl font-bold mb-6">ALLOX Token Utility</h3>
             <div className="relative">
-              <div className="absolute left-4 top-5 bottom-5 w-px bg-gray-200/70" />
-              <div className="space-y-6">
+              {/* <div className="absolute left-4 top-5 bottom-5 w-px bg-gray-200/70" /> */}
+              <div className="grid sm:grid-cols-2 gap-4">
                 {UTILITIES.map((u, i) => (
                   <motion.div
                     key={i}
@@ -5655,15 +5654,13 @@ export function PublicSaleSonarPage() {
               <div className="flex flex-col md:flex-row md:items-center gap-8">
                 <div className="flex-1">
                   <h3 className="text-3xl font-bold text-white leading-tight mb-3">
-                    Traction &<br />
-                    Momentum
+                   Our numbers 
                   </h3>
                   <p
                     className="text-sm mb-5"
                     style={{ color: "rgba(255,255,255,0.45)" }}
                   >
-                    The community sale is backed by a platform with real
-                    metrics, real users, and real on-chain activity.
+                    Live figures from our platform. Nothing here is a projection.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-10 gap-y-7 flex-shrink-0">
@@ -5921,7 +5918,7 @@ export function PublicSaleSonarPage() {
                 className="text-xs font-bold uppercase tracking-widest mb-4"
                 style={{ color: "rgba(255,255,255,0.3)" }}
               >
-                Product Credibility
+               WHY PEOPLE USE ALLOX
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {CREDIBILITY.map((point, i) => (
@@ -5989,15 +5986,14 @@ export function PublicSaleSonarPage() {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="h-px w-6 bg-teal-400" />
                   <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">
-                    Sale momentum
+                    WHERE WE ARE TODAY
                   </span>
                 </div>
                 <h3 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight">
-                  Real traction behind the sale.
+                  We're not starting from zero.
                 </h3>
                 <p className="mt-3 text-sm sm:text-base text-white/50 leading-relaxed">
-                  AlloX isn’t launching from zero, the community sale is backed
-                  by revenue, users, and volume already proven in production.
+                This sale is backed by the revenue, users and volume we already have in production.
                 </p>
               </div>
               <div
