@@ -203,16 +203,6 @@ export function normalizeChainToken(token, chainConfig) {
   };
 }
 
-/** Whether a tier is unlocked for the current user per eligibility payload. */
-export function isTierEligibleForUser(eligibility, tierKey) {
-  if (!eligibility?.eligible) return false;
-  const tiers = eligibility?.tiers;
-  if (!tiers || typeof tiers !== "object") return true;
-  const key = String(tierKey || "").toUpperCase();
-  if (key in tiers) return tiers[key] === true;
-  return true;
-}
-
 /** Convert a USD amount to token raw units (stablecoins: 1 USD = 1 token unit). */
 export function usdToTokenRaw(amountUsd, decimals) {
   const n = Number(amountUsd);

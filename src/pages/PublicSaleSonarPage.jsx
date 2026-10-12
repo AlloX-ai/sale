@@ -507,6 +507,7 @@ const DEX_VOLUME = [
   { week: "29 Sep", value: 121150000, label: "$121.15M" },
   { week: "05 Oct", value: 149300000, label: "$149.3M" },
   { week: "09 Oct", value: 162400000, label: "$162.4M" },
+  { week: "12 Oct", value: 171400000, label: "$171.4M" },
 ];
 
 const PUBLIC_SALE_STEPS = [
@@ -545,30 +546,24 @@ const PUBLIC_SALE_STEPS = [
 const PRIVATE_SALE_STEPS = [
   {
     n: "01",
-    title: "Confirm Loyalty Access",
-    desc: "Sign in with your AlloX account. Private sale access is reserved for loyalty users.",
+    title: "Sign In",
+    desc: "Sign in with your AlloX account to access the private sale.",
     icon: Award,
   },
   {
     n: "02",
     title: "Connect Your Wallet",
-    desc: "Connect the wallet linked to your loyalty profile for contribution and allocation delivery.",
+    desc: "Connect the wallet you'll contribute from and receive your allocation on.",
     icon: Wallet,
   },
   {
     n: "03",
-    title: "Unlock Eligibility",
-    desc: "Confirm you meet loyalty criteria. Eligible users get access to private FDV tiers.",
-    icon: Shield,
-  },
-  {
-    n: "04",
     title: "Join the Private Sale",
     desc: "Choose a private plan (0% / 20% / 40% discount), then commit with USDC or USDT.",
     icon: DollarSign,
   },
   {
-    n: "05",
+    n: "04",
     title: "Receive Your ALLOX Tokens",
     desc: "Tokens unlock at TGE per your private plan, full unlock, partial TGE, or cliff + vesting.",
     icon: Gift,
@@ -589,15 +584,15 @@ const SALE_MOMENTUM_HIGHLIGHTS = [
     accent: "#2dd4bf",
   },
   {
-    value: "$162.4M",
+    value: "$171M",
     label: "Cumulative DEX Aggregator Volume",
     detail: "Cumulative trading & on-chain volume",
     accent: "#fbbf24",
   },
   {
-    value: "312,000",
-    label: "Portfolios last 30 days",
-    detail: "On-chain portfolios created in the last 30 days",
+    value: "{onChainPortfolios}",
+    label: "On-chain Portfolios",
+    detail: "On-chain portfolios created on AlloX",
     accent: "#fb7185",
   },
 ];
@@ -635,9 +630,9 @@ const KEY_MILESTONES = [
     status: "completed",
   },
   {
-    title: "$162.4M Volume Reached",
-    metric: "$162.4M",
-    desc: "Crossed $162.4M in cumulative DEX Aggregator volume across 312,000 on-chain portfolios created in 30 days.",
+    title: "$171M Volume Reached",
+    metric: "$171M",
+    desc: "Crossed $171M in cumulative DEX Aggregator volume across {onChainPortfolios} on-chain portfolios.",
     status: "completed",
   },
   {
@@ -689,21 +684,6 @@ const sanitizeUsdInput = (raw, max) => {
   if (v !== "" && v !== "." && parseFloat(v) > max) return String(max);
   return v;
 };
-
-// "Join the Sale" form amount options, clamped to the sale's min/max.
-const REF_AMOUNT_STEPS = [
-  100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 200_000,
-];
-const buildRefAmountOptions = (min, max) =>
-  [
-    ...new Set([
-      min,
-      ...REF_AMOUNT_STEPS.filter((a) => a > min && a < max),
-      max,
-    ]),
-  ].filter((a) => a > 0);
-
-const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 const REF_BIND_ERROR_MESSAGES = {
   SELF_REFERRAL: "You can't use your own referral code.",
@@ -862,7 +842,7 @@ export function PublicSaleSonarPage() {
   const [successCountdown, setSuccessCountdown] = useState(5);
   const [liveAmount, setLiveAmount] = useState("");
   const [liveSaleKind, setLiveSaleKind] = useState("public");
-  const [livePlanId, setLivePlanId] = useState("silver");
+  const [livePlanId, setLivePlanId] = useState("platinum");
   const [liveAsset, setLiveAsset] = useState("USDC");
   const [liveAssetOpen, setLiveAssetOpen] = useState(false);
   const [liveChainOpen, setLiveChainOpen] = useState(false);
@@ -870,6 +850,7 @@ export function PublicSaleSonarPage() {
   const [liveTermsOpen, setLiveTermsOpen] = useState(false);
   const [tiersOpen, setTiersOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [refTab, setRefTab] = useState("all");
   const [tiersExpanded, setTiersExpanded] = useState(true);
 
   const [data, setData] = useState(null);
@@ -877,15 +858,6 @@ export function PublicSaleSonarPage() {
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [registeredInfoOpen, setRegisteredInfoOpen] = useState(false);
   const [investHistoryOpen, setInvestHistoryOpen] = useState(false);
-  // Referral form modal
-  const [refFormOpen, setRefFormOpen] = useState(false);
-  const [refWallet, setRefWallet] = useState("");
-  const [refAmount, setRefAmount] = useState("");
-  const [refEmail, setRefEmail] = useState("");
-  const [refSubmitting, setRefSubmitting] = useState(false);
-  const [refFormError, setRefFormError] = useState(null);
-  // `next` from the lead response; non-null once the form was submitted.
-  const [refSubmitted, setRefSubmitted] = useState(null);
   const balancePopupRef = useRef(null);
   const registeredInfoPopupRef = useRef(null);
   const liveAssetMenuRef = useRef(null);
@@ -1042,6 +1014,12 @@ export function PublicSaleSonarPage() {
   useEffect(() => {
     getData();
   }, []);
+  // Live count for the "{onChainPortfolios}" placeholder in the stat card and
+  // milestone copy.
+  const onChainPortfoliosText =
+    data?.stats?.onChainPortfoliosCreated != null
+      ? Number(data.stats.onChainPortfoliosCreated).toLocaleString("en-US")
+      : "—";
   // useEffect(() => {
   //   if (liveSaleKind === "private") {
   //     setSaleState("whitelist");
@@ -1063,47 +1041,53 @@ export function PublicSaleSonarPage() {
   const publicSale = usePublicSale();
   const refCode = publicSale.referral?.refCode ?? null;
   const refLink = publicSale.referralLink;
-  const refStats = publicSale.referral?.stats ?? null;
-  // Confirmed and form-sourced (unconfirmed) referrals plus "Invited" leads,
-  // newest first.
+  // Referred wallets plus form-only leads, newest first. A lead whose wallet is
+  // already referred is the same person. Anyone with money in is "invested";
+  // everyone else (including form leads, whose amount is only a pledge) is
+  // "invited".
+  const referredList = Array.isArray(publicSale.referral?.referred)
+    ? publicSale.referral.referred
+    : [];
+  const referredWallets = new Set(referredList.map((r) => r.wallet));
   const referredInvestors = [
-    ...(Array.isArray(publicSale.referral?.referred)
-      ? publicSale.referral.referred.map((r) => ({
-          ...r,
-          kind: r.confirmed === false ? "pending" : "confirmed",
-        }))
-      : []),
+    ...referredList.map((r) => ({
+      wallet: r.wallet,
+      investedUsd: Number(r.investedUsd) || 0,
+      rewardUsd: Number(r.commissionUsd) || 0,
+      at: r.at,
+    })),
     ...(Array.isArray(publicSale.referral?.leads)
-      ? publicSale.referral.leads.map((l) => ({
-          wallet: l.wallet,
-          investedUsd: l.amountUsd,
-          commissionUsd: null,
-          at: l.at,
-          kind: "invited",
-        }))
+      ? publicSale.referral.leads
+          .filter((l) => !referredWallets.has(l.wallet))
+          .map((l) => ({
+            wallet: l.wallet,
+            investedUsd: 0,
+            rewardUsd: 0,
+            at: l.at,
+          }))
       : []),
-  ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
-  // Referral rewards are paid in $ALLOX, not USDT, by the team once the sale
-  // settles (no self-serve claim for now).
-  const earnedRewardsAllox = Number(refStats?.earnedUsd) || 0;
-  const paidRewardsAllox = Number(publicSale.referral?.paidUsd) || 0;
-  // 8% for private-sale contributors, 5% for everyone else.
-  const referralPct =
-    Number(publicSale.referral?.commissionPct) ||
-    Number(publicSale.sale?.referralPct) ||
-    5;
-  // Code the lead form submits for: the one the visitor landed with, else the
-  // signed-in user's own code (inviting someone directly).
-  const formRefCode = publicSale.landingRefCode || refCode;
-  const refAmountOptions = buildRefAmountOptions(
-    Number(publicSale.sale?.minCommitUsd) || WL_MIN_USD,
-    Number(publicSale.sale?.maxCommitUsd) || WL_MAX_USD,
-  );
+  ]
+    .map((r) => ({ ...r, status: r.investedUsd > 0 ? "invested" : "invited" }))
+    .sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+  const refInvestorCount = referredInvestors.filter(
+    (r) => r.status === "invested",
+  ).length;
+  const refVolumeUsd = referredInvestors.reduce((s, r) => s + r.investedUsd, 0);
+  const visibleReferrals =
+    refTab === "all"
+      ? referredInvestors
+      : referredInvestors.filter((r) => r.status === refTab);
+  const fmtRefUsd = (n) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
   const referredByCode = publicSale.position?.referredByCode ?? null;
   const bindErrorMessage = publicSale.bindError
     ? REF_BIND_ERROR_MESSAGES[publicSale.bindError.reason] ||
       publicSale.bindError.message
     : null;
+  const isOwnLandingCode =
+    publicSale.bindError?.reason === "SELF_REFERRAL" ||
+    (!!refCode &&
+      publicSale.landingRefCode?.toUpperCase() === refCode.toUpperCase());
 
   // Whitelist flow
   const wlNum = parseFloat(wlAmount) || 0;
@@ -1216,51 +1200,6 @@ export function PublicSaleSonarPage() {
     }
   };
 
-  const openRefForm = () => {
-    setRefFormOpen(true);
-    setRefSubmitted(null);
-    setRefFormError(null);
-    setRefWallet("");
-    setRefAmount("");
-    setRefEmail("");
-  };
-
-  const closeRefForm = () => {
-    setRefFormOpen(false);
-    setRefSubmitted(null);
-  };
-
-  const handleRefSubmit = async () => {
-    if (!formRefCode || !EVM_ADDRESS_RE.test(refWallet.trim()) || !refAmount)
-      return;
-    setRefSubmitting(true);
-    setRefFormError(null);
-    try {
-      const res = await publicSale.submitReferralLead({
-        refCode: formRefCode,
-        address: refWallet.trim(),
-        amountUsd: Number(refAmount),
-        email: refEmail,
-      });
-      setRefSubmitted(
-        res?.next ||
-          "Log in with this wallet on the sale page to confirm and invest.",
-      );
-    } catch (err) {
-      setRefFormError(
-        err?.status === 404
-          ? "This referral code wasn't found."
-          : err?.status === 409
-            ? "You can't use your own referral code. Enter a different wallet."
-            : err?.status === 400
-              ? err.message
-              : "Something went wrong. Please try again.",
-      );
-    } finally {
-      setRefSubmitting(false);
-    }
-  };
-
   // Lowering only helps when the balance still covers the minimum allocation.
   const canLowerToBalance =
     walletBalanceUsd != null && Math.floor(walletBalanceUsd) >= minUsd;
@@ -1305,11 +1244,26 @@ export function PublicSaleSonarPage() {
     switchToSaleChain,
   });
   const isPrivateSale = liveSaleKind === "private";
+  // Unlock terms (TGE %, cliff, vesting) come from LIVE_PLANS; the API only
+  // has vague labels like "Cliff + vesting".
   const publicPlans =
-    publicSale.plans.length > 0 ? publicSale.plans : LIVE_PLANS;
-  const activePlans = isPrivateSale
-    ? privateSale.plansWithEligibility
-    : publicPlans;
+    publicSale.plans.length > 0
+      ? publicSale.plans.map((p) => {
+          const local = LIVE_PLANS.find((l) => l.id === p.id);
+          return local
+            ? {
+                ...p,
+                tgePct: local.tgePct,
+                cliff: local.cliff,
+                vesting: local.vesting,
+              }
+            : p;
+        })
+      : LIVE_PLANS;
+  // Biggest discount first: Platinum, Gold, Silver.
+  const activePlans = [
+    ...(isPrivateSale ? privateSale.plans : publicPlans),
+  ].sort((a, b) => b.discount - a.discount);
   const activeSaleSteps = isPrivateSale
     ? PRIVATE_SALE_STEPS
     : PUBLIC_SALE_STEPS;
@@ -1645,7 +1599,8 @@ export function PublicSaleSonarPage() {
         </div> */}
 
         {/* Referral landing (?refCode=) / "Referred by" */}
-        {(referredByCode || publicSale.landingRefCode) && (
+        {/* {(referredByCode ||
+          (publicSale.landingRefCode && !isOwnLandingCode)) && (
           <div
             className="flex flex-wrap items-center gap-3 mt-2 p-3 rounded-2xl"
             style={{
@@ -1674,19 +1629,8 @@ export function PublicSaleSonarPage() {
                 </p>
               )}
             </div>
-            {!referredByCode && !bindErrorMessage && (
-              <button
-                onClick={openRefForm}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                }}
-              >
-                Join the Sale
-              </button>
-            )}
           </div>
-        )}
+        )} */}
 
         {/* {liveSaleKind === "public" && (
           <div className="flex justify-end items-center my-4 gap-3">
@@ -1801,7 +1745,7 @@ export function PublicSaleSonarPage() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                               >
-                                <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white border border-gray-200 shadow-sm">
+                                <div className="h-fit flex items-center gap-2 px-3 py-2  rounded-full bg-white hover:bg-gray-200 border border-gray-200 shadow-sm">
                                   <img
                                     src={esmaLogo}
                                     alt="ESMA"
@@ -2067,7 +2011,7 @@ export function PublicSaleSonarPage() {
                                   if (sonar.ready) sonar.connectSonar();
                                 }
                               }}
-                              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full w-fit bg-white text-gray-900 text-[11px] font-bold px-3 py-1.5 shadow-sm transition-colors ${
+                              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full w-fit bg-white hover:bg-gray-200 text-gray-900 text-[11px] font-bold px-3 py-1.5 shadow-sm transition-colors ${
                                 sonar.ready
                                   ? "cursor-pointer hover:bg-gray-100"
                                   : "opacity-50 cursor-not-allowed"
@@ -2241,7 +2185,7 @@ export function PublicSaleSonarPage() {
                       return (
                         <div className="glass-card px-5 py-4">
                           {/* Stats row */}
-                          <div className="grid grid-cols-3 divide-x divide-gray-100">
+                          <div className="grid grid-cols-2 divide-x divide-gray-100">
                             {/* Committed */}
                             <div className="min-w-0 pr-3">
                               <div className="flex items-center gap-1 mb-0.5">
@@ -2259,7 +2203,7 @@ export function PublicSaleSonarPage() {
                             </div>
 
                             {/* Participants */}
-                            <div className="min-w-0 px-3 text-center">
+                            {/* <div className="min-w-0 px-3 text-center">
                               <div className="flex items-center justify-center gap-1 mb-0.5">
                                 <Users
                                   size={11}
@@ -2274,7 +2218,7 @@ export function PublicSaleSonarPage() {
                                   ? Number(contributors).toLocaleString()
                                   : "—"}
                               </p>
-                            </div>
+                            </div> */}
 
                             {/* Subscription multiplier */}
                             <div className="min-w-0 pl-3 text-right">
@@ -3351,90 +3295,21 @@ export function PublicSaleSonarPage() {
                         </div>
                       )}
 
-                      {isPrivateSale &&
-                        isConnected &&
-                        !isAuthenticated &&
-                        !privateSale.eligibilityLoading && (
-                          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
-                            <div className="flex items-start gap-3">
-                              <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                              <div className="min-w-0 flex-1">
-                                <h5 className="font-bold text-gray-900 mb-0.5">
-                                  Sign in to contribute
-                                </h5>
-                                <p className="text-sm text-gray-600">
-                                  Sign in to check eligibility and invest.
-                                </p>
-                              </div>
+                      {isPrivateSale && isConnected && !isAuthenticated && (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+                          <div className="flex items-start gap-3">
+                            <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <h5 className="font-bold text-gray-900 mb-0.5">
+                                Sign in to contribute
+                              </h5>
+                              <p className="text-sm text-gray-600">
+                                Sign in to invest.
+                              </p>
                             </div>
                           </div>
-                        )}
-
-                      {isPrivateSale &&
-                        isAuthenticated &&
-                        !privateSale.eligibilityLoading &&
-                        !privateSale.isEligible && (
-                          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-5">
-                            <div className="flex items-start gap-3">
-                              <Lock className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <h5 className="font-bold text-gray-900 mb-1">
-                                  Loyalty users only
-                                </h5>
-                                <p className="text-sm text-gray-600 mb-3">
-                                  The private sale is reserved for eligible
-                                  loyalty users. Complete the requirements below
-                                  to unlock access.
-                                </p>
-                                <ul className="space-y-2 text-sm">
-                                  <li
-                                    className={`flex items-center gap-2 ${privateSale.eligibility?.season1Claimed ? "text-emerald-700" : "text-gray-700"}`}
-                                  >
-                                    {privateSale.eligibility?.season1Claimed ? (
-                                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                    ) : (
-                                      <X className="w-4 h-4 text-red-400" />
-                                    )}
-                                    Claim Season 1 rewards
-                                  </li>
-                                  <li
-                                    className={`flex items-center gap-2 ${(privateSale.eligibility?.lifetimeVolumeUsd ?? 0) >= 10 ? "text-emerald-700" : "text-gray-700"}`}
-                                  >
-                                    {(privateSale.eligibility
-                                      ?.lifetimeVolumeUsd ?? 0) >= 10 ? (
-                                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                    ) : (
-                                      <X className="w-4 h-4 text-red-400" />
-                                    )}
-                                    $10+ lifetime trading volume
-                                    {(privateSale.eligibility
-                                      ?.lifetimeVolumeUsd ?? 0) > 0 && (
-                                      <span className="text-gray-400">
-                                        (current: $
-                                        {Number(
-                                          privateSale.eligibility
-                                            .lifetimeVolumeUsd,
-                                        ).toLocaleString(undefined, {
-                                          maximumFractionDigits: 2,
-                                        })}
-                                        )
-                                      </span>
-                                    )}
-                                  </li>
-                                </ul>
-                                {!privateSale.eligibility?.season1Claimed && (
-                                  <Link
-                                    to="/?welcomeBonus=1"
-                                    className="inline-flex items-center gap-1.5 mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                                  >
-                                    Claim Welcome Bonus
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </Link>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        </div>
+                      )}
 
                       <>
                         {/* Plan selector */}
@@ -3457,36 +3332,23 @@ export function PublicSaleSonarPage() {
                             <div className="grid sm:grid-cols-3 grid-cols-1 gap-2.5">
                               {activePlans.map((p) => {
                                 const selected = effectivePlanId === p.id;
-                                const tierLocked =
-                                  isPrivateSale &&
-                                  isAuthenticated &&
-                                  !privateSale.eligibilityLoading &&
-                                  p.tierEligible === false;
                                 return (
                                   <button
                                     key={`${liveSaleKind}-${p.id}`}
                                     type="button"
-                                    disabled={tierLocked}
                                     onClick={() =>
                                       isPrivateSale
                                         ? privateSale.setSelectedPlanId(p.id)
                                         : setLivePlanId(p.id)
                                     }
                                     className={`relative text-left p-3.5 rounded-2xl border-2 transition-all duration-200 ${
-                                      tierLocked
-                                        ? "border-gray-100 bg-gray-50/80 opacity-60 cursor-not-allowed"
-                                        : selected
-                                          ? isPrivateSale
-                                            ? "border-amber-500 bg-amber-50/80 shadow-[0_0_0_4px_rgba(245,158,11,0.12)] scale-[1.01]"
-                                            : "border-indigo-500 bg-indigo-50/70 shadow-[0_0_0_4px_rgba(99,102,241,0.12)] scale-[1.01]"
-                                          : "border-gray-200/80 bg-white/70 hover:border-indigo-300 hover:bg-white hover:shadow-md"
+                                      selected
+                                        ? isPrivateSale
+                                          ? "border-amber-500 bg-amber-50/80 shadow-[0_0_0_4px_rgba(245,158,11,0.12)] scale-[1.01]"
+                                          : "border-black bg-gray-50 shadow-[0_0_0_4px_rgba(0,0,0,0.08)] scale-[1.01]"
+                                        : "border-gray-200/80 bg-white/70 hover:border-gray-400 hover:bg-white hover:shadow-md"
                                     }`}
                                   >
-                                    {tierLocked && (
-                                      <span className="absolute -top-2 right-2 bg-gray-200 text-gray-600 text-[10px] font-black tracking-wide px-2 py-0.5 rounded-md">
-                                        LOCKED
-                                      </span>
-                                    )}
                                     {p.premium && (
                                       <span className="absolute -top-2 right-2 bg-amber-400 text-amber-950 text-[10px] font-black tracking-wide px-2 py-0.5 rounded-md shadow-sm">
                                         PREMIUM
@@ -3497,7 +3359,7 @@ export function PublicSaleSonarPage() {
                                         selected
                                           ? isPrivateSale
                                             ? "text-amber-950"
-                                            : "text-indigo-900"
+                                            : "text-black"
                                           : "text-gray-900"
                                       }`}
                                     >
@@ -3508,7 +3370,7 @@ export function PublicSaleSonarPage() {
                                         selected
                                           ? isPrivateSale
                                             ? "text-amber-700"
-                                            : "text-indigo-600"
+                                            : "text-black"
                                           : "text-gray-500"
                                       }`}
                                     >
@@ -4185,8 +4047,8 @@ export function PublicSaleSonarPage() {
                             privateSale.contribute();
                           }}
                           className={`w-full font-bold py-4 rounded-2xl text-base transition-all duration-200 ${
-                            (isPrivateSale && !isConnected) ||
-                            (isPrivateSale &&
+                            (!isPrivateSale && !isConnected) ||
+                            (!isPrivateSale &&
                               isConnected &&
                               !isAuthenticated) ||
                             (!isPrivateSale &&
@@ -4225,26 +4087,17 @@ export function PublicSaleSonarPage() {
                                                 liveInsufficientBalance
                                               ? `Insufficient ${liveAsset} balance`
                                               : isPrivateSale &&
-                                                  privateSale.eligibilityLoading
-                                                ? "Checking eligibility…"
-                                                : isPrivateSale &&
-                                                    !privateSale.isEligible
-                                                  ? "Not eligible"
-                                                  : isPrivateSale &&
-                                                      !privateSale.saleActive
-                                                    ? privateSale.saleEnded
-                                                      ? "Sale Ended"
-                                                      : "Sale Not Active"
-                                                    : isPrivateSale &&
-                                                        !privateSale.isSelectedTierEligible
-                                                      ? "Tier not available"
-                                                      : liveNum <= 0
-                                                        ? "Enter Amount"
-                                                        : liveNum < liveMinUsd
-                                                          ? `Minimum is $${liveMinUsd.toLocaleString()}`
-                                                          : liveNum > liveMaxUsd
-                                                            ? "Amount exceeds maximum"
-                                                            : "Invest"}
+                                                  !privateSale.saleActive
+                                                ? privateSale.saleEnded
+                                                  ? "Sale Ended"
+                                                  : "Sale Not Active"
+                                                : liveNum <= 0
+                                                  ? "Enter Amount"
+                                                  : liveNum < liveMinUsd
+                                                    ? `Minimum is $${liveMinUsd.toLocaleString()}`
+                                                    : liveNum > liveMaxUsd
+                                                      ? "Amount exceeds maximum"
+                                                      : "Invest"}
                         </button>
                       </>
                     </div>
@@ -4459,7 +4312,7 @@ export function PublicSaleSonarPage() {
                         <button
                           type="button"
                           onClick={() => setLiveTermsOpen(true)}
-                          className="font-semibold text-sm text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
+                          className="font-semibold text-sm text-gray-500 hover:text-gray-700 underline underline-offset-2"
                         >
                           Sale Terms
                         </button>
@@ -4783,117 +4636,60 @@ export function PublicSaleSonarPage() {
             className="mb-4"
           >
             {/* Section header + Form button */}
-            <div className="flex items-center justify-between my-4">
+            <div className="flex items-center justify-between gap-3 my-4">
               <div>
-                <h3 className="text-lg font-black text-gray-900">
+                <h3 className="text-2xl font-black text-gray-900">
                   Referral Program
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Earn {referralPct}% in ALLOX on every investment your referrals
-                  make in real time.
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Earn ALLOX on every investment your referrals make.
                 </p>
               </div>
-              <button
-                onClick={openRefForm}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                  color: "white",
-                  boxShadow: "0 4px 14px rgba(99,102,241,0.35)",
-                }}
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                Form
-              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* LEFT — Your referral link + earn info */}
-              <div className="glass-card p-6 flex flex-col gap-5">
-                {/* Headline */}
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                    }}
-                  >
-                    <Gift className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="font-black text-gray-900 text-sm">
-                      Share & Earn
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {referralPct}% in ALLOX on every referral investment
-                    </div>
-                  </div>
-                </div>
-
-                {/* How it works */}
-                <div className="space-y-2.5">
+            <div className="glass-card grid grid-cols-1 md:grid-cols-2 overflow-hidden">
+              {/* LEFT — how it works, link, stats */}
+              <div className="p-6 flex flex-col gap-5 border-b md:border-b-0 md:border-r border-gray-200">
+                <div className="space-y-3">
                   {[
-                    { step: "1", text: "Share your referral link with anyone" },
-                    {
-                      step: "2",
-                      text: "They invest in the ALLOX Community Sale",
-                    },
-                    {
-                      step: "3",
-                      text: `You earn ${referralPct}% of their investment in ALLOX`,
-                    },
-                  ].map((item) => (
-                    <div key={item.step} className="flex items-center gap-3">
-                      <div
-                        className="w-6 h-6 rounded-full font-black text-xs flex items-center justify-center flex-shrink-0 text-white"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                        }}
-                      >
-                        {item.step}
+                    "Share your referral link with anyone",
+                    "They invest in the ALLOX Community Sale",
+                    "You earn ALLOX on their investment",
+                  ].map((text, i) => (
+                    <div key={text} className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-full bg-indigo-900 text-white font-black text-xs flex items-center justify-center flex-shrink-0">
+                        {i + 1}
                       </div>
-                      <p className="text-sm text-gray-700">{item.text}</p>
+                      <p className="text-sm text-gray-800">{text}</p>
                     </div>
                   ))}
                 </div>
 
-                {/* Your link */}
                 <div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                  <div className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
                     Your Referral Link
                   </div>
-                  <div
-                    className="flex items-center gap-2 p-3 rounded-xl"
-                    style={{
-                      background: "rgba(99,102,241,0.07)",
-                      border: "1px solid rgba(99,102,241,0.18)",
-                    }}
-                  >
-                    <span className="text-xs text-gray-600 font-mono flex-1 truncate">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 min-w-0 truncate px-3 py-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700 font-mono">
                       {refLink ||
                         (!isConnected
                           ? "Connect wallet to get your referral link"
                           : !isAuthenticated
                             ? "Sign in to get your referral link"
                             : publicSale.referralLoading
-                            ? "Loading…"
-                            : "—")}
+                              ? "Loading…"
+                              : "—")}
                     </span>
                     <button
                       onClick={copyRef}
                       disabled={isConnected && isAuthenticated && !refLink}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
-                        background: copied
-                          ? "#22c55e"
-                          : "linear-gradient(135deg, #818cf8, #6366f1)",
-                        color: "white",
-                      }}
+                      className={`flex items-center gap-1.5 px-4 py-3 rounded-xl text-sm font-bold text-white flex-shrink-0 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        copied ? "bg-green-500" : "bg-indigo-900"
+                      }`}
                     >
                       {copied ? (
                         <>
-                          <Check className="w-3 h-3" />
+                          <Check className="w-4 h-4" />
                           Copied!
                         </>
                       ) : !isConnected ? (
@@ -4902,7 +4698,7 @@ export function PublicSaleSonarPage() {
                         "Sign in"
                       ) : (
                         <>
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-4 h-4" />
                           Copy
                         </>
                       )}
@@ -4910,207 +4706,186 @@ export function PublicSaleSonarPage() {
                   </div>
                 </div>
 
-                {/* Stats strip */}
-                <div className="grid grid-cols-2 gap-3 mt-auto">
+                <div className="grid grid-cols-2 gap-2.5">
                   {[
                     {
-                      label: "Referrals",
-                      value: refStats
-                        ? Number(refStats.referrals || 0).toLocaleString()
-                        : "—",
+                      label: "Invited",
+                      value: referredInvestors.length.toLocaleString(),
                     },
                     {
                       label: "Investors",
-                      value: refStats
-                        ? Number(refStats.investors || 0).toLocaleString()
-                        : "—",
+                      value: refInvestorCount.toLocaleString(),
                     },
+                    { label: "Total Volume", value: fmtRefUsd(refVolumeUsd) },
                     {
-                      label: "Invited",
-                      value: refStats
-                        ? Number(refStats.leads || 0).toLocaleString()
-                        : "—",
-                    },
-                    {
-                      label: "Total Vol.",
-                      value: refStats
-                        ? `$${formatCompactNumber(Number(refStats.totalVolumeUsd) || 0)}`
-                        : "—",
+                      label: "Conversion",
+                      value: `${
+                        referredInvestors.length
+                          ? Math.round(
+                              (refInvestorCount / referredInvestors.length) *
+                                100,
+                            )
+                          : 0
+                      }%`,
                     },
                   ].map((s) => (
                     <div
                       key={s.label}
-                      className="rounded-xl px-3 py-2.5 text-center"
-                      style={{
-                        background: "rgba(99,102,241,0.06)",
-                        border: "1px solid rgba(99,102,241,0.12)",
-                      }}
+                      className="rounded-xl px-4 py-3 bg-gray-50"
                     >
-                      <div className="text-base font-black text-gray-900">
+                      <div className="text-xs text-gray-500">{s.label}</div>
+                      <div className="text-xl font-black text-gray-900">
                         {s.value}
-                      </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">
-                        {s.label}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* RIGHT — Referral list + pending rewards */}
-              <div className="glass-card p-6 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="font-black text-gray-900 text-sm">
+              {/* RIGHT — referred investors */}
+              <div className="p-6 flex flex-col gap-3 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-black text-gray-900 text-lg">
                     Referred Investors
                   </div>
-                  <div
-                    className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full"
-                    style={{
-                      background: "rgba(99,102,241,0.1)",
-                      color: "#6366f1",
-                    }}
-                  >
-                    {referredInvestors.length} users
-                  </div>
-                </div>
-
-                {/* Scrollable list */}
-                <div
-                  className="overflow-y-auto flex-1 space-y-1.5 pr-1"
-                  style={{ maxHeight: "240px" }}
-                >
-                  {/* Header row */}
-                  <div className="grid grid-cols-3 px-3 pb-1 border-b border-black/5">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                      Wallet ID
-                    </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 text-center">
-                      Invested
-                    </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 text-right">
-                      Your {referralPct}%
-                    </span>
-                  </div>
-                  {referredInvestors.length === 0 && (
-                    <p className="px-3 py-6 text-xs text-gray-400 text-center">
-                      {!isAuthenticated
-                        ? "Sign in to see the investors you referred."
-                        : publicSale.referralLoading
-                          ? "Loading referrals…"
-                          : "No referred investors yet. Share your link to start earning."}
-                    </p>
-                  )}
-                  {referredInvestors.map((r, i) => (
-                    <motion.div
-                      key={`${r.kind}-${r.wallet}-${r.at ?? i}`}
-                      initial={{ opacity: 0, x: 8 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      viewport={{ once: true }}
-                      transition={{ delay: i * 0.05, duration: 0.2 }}
-                      className={`grid grid-cols-3 items-center px-3 py-2.5 rounded-xl ${
-                        r.kind === "confirmed" ? "" : "opacity-60"
-                      }`}
-                      title={
-                        r.kind === "pending"
-                          ? "Earns nothing until this wallet logs in on the sale page."
-                          : r.kind === "invited"
-                            ? "Submitted through the form; hasn't invested yet."
-                            : undefined
-                      }
-                      style={{
-                        background:
-                          i % 2 === 0 ? "rgba(0,0,0,0.02)" : "transparent",
-                        border: "1px solid transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background =
-                          "rgba(99,102,241,0.06)";
-                        e.currentTarget.style.border =
-                          "1px solid rgba(99,102,241,0.12)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background =
-                          i % 2 === 0 ? "rgba(0,0,0,0.02)" : "transparent";
-                        e.currentTarget.style.border = "1px solid transparent";
-                      }}
-                    >
-                      <div>
-                        <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-gray-700">
-                          {shortWallet(r.wallet)}
-                          {r.kind !== "confirmed" && (
-                            <span className="font-sans text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">
-                              {r.kind === "pending" ? "Pending" : "Invited"}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          {r.at
-                            ? new Date(r.at).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })
-                            : ""}
-                        </div>
-                      </div>
-                      <div className="text-xs font-bold text-gray-800 text-center">
-                        ${(Number(r.investedUsd) || 0).toLocaleString()}
-                      </div>
-                      <div
-                        className="text-xs font-black text-right"
-                        style={{ color: "#6366f1" }}
-                      >
-                        {r.kind === "confirmed" ? (
-                          <>
-                            +
-                            {(Number(r.commissionUsd) || 0).toLocaleString(
-                              undefined,
-                              { maximumFractionDigits: 2 },
-                            )}{" "}
-                            ALLOX
-                          </>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {/* Rewards — paid by the team after the sale settles */}
-                <div
-                  className="rounded-xl p-4"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(129,140,248,0.1), rgba(99,102,241,0.08))",
-                    border: "1px solid rgba(99,102,241,0.2)",
-                  }}
-                >
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="flex p-1 rounded-xl bg-gray-100">
                     {[
-                      { label: "Earned", value: earnedRewardsAllox },
-                      { label: "Paid", value: paidRewardsAllox },
-                    ].map((r) => (
-                      <div key={r.label}>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">
-                          {r.label}
-                        </div>
-                        <div
-                          className="text-xl font-black"
-                          style={{ color: "#6366f1" }}
-                        >
-                          {publicSale.referral
-                            ? `${r.value.toLocaleString(undefined, {
-                                maximumFractionDigits: 2,
-                              })} ALLOX`
-                            : "—"}
-                        </div>
-                      </div>
+                      ["all", "All", referredInvestors.length],
+                      ["invested", "Invested", refInvestorCount],
+                      [
+                        "invited",
+                        "Invited",
+                        referredInvestors.length - refInvestorCount,
+                      ],
+                    ].map(([key, label, count]) => (
+                      <button
+                        key={key}
+                        onClick={() => setRefTab(key)}
+                        className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-all ${
+                          refTab === key
+                            ? "bg-white font-bold text-gray-900 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        {label} <span className="text-gray-500">{count}</span>
+                      </button>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11px] text-gray-500">
-                    Commissions are paid out by the team after the sale settles.
-                  </p>
                 </div>
+
+                {visibleReferrals.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-12">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center mb-3">
+                      <UserPlus className="w-5 h-5 text-indigo-700" />
+                    </div>
+                    <div className="font-black text-gray-900">
+                      {!isAuthenticated
+                        ? "Sign in to see your referrals"
+                        : publicSale.referralLoading
+                          ? "Loading referrals…"
+                          : "No referrals yet"}
+                    </div>
+                    {isAuthenticated && !publicSale.referralLoading && (
+                      <p className="text-sm text-gray-500 mt-1 max-w-xs">
+                        Share your link. Everyone who joins with it shows up
+                        here.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="overflow-auto max-h-[298px]">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 z-10 bg-white">
+                        <tr className="border-b border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                          <th className="py-2 pr-2 text-left font-bold">
+                            Wallet
+                          </th>
+                          <th className="py-2 px-2 text-left font-bold">
+                            Status
+                          </th>
+                          <th className="py-2 px-2 text-right font-bold">
+                            Invested
+                          </th>
+                          <th className="py-2 pl-2 text-right font-bold whitespace-nowrap">
+                            Your Reward
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleReferrals.map((r, i) => (
+                          <tr key={i} className="border-b border-gray-100">
+                            <td className="py-3 pr-2">
+                              <div className="font-mono font-semibold text-gray-900 text-xs sm:text-sm">
+                                {shortWallet(r.wallet)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {r.at
+                                  ? new Date(r.at).toLocaleDateString(
+                                      undefined,
+                                      {
+                                        month: "short",
+                                        day: "numeric",
+                                        year: "numeric",
+                                      },
+                                    )
+                                  : ""}
+                              </div>
+                            </td>
+                            <td className="py-3 px-2">
+                              <span
+                                className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                  r.status === "invested"
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-gray-100 text-gray-600"
+                                }`}
+                              >
+                                {r.status === "invested"
+                                  ? "Invested"
+                                  : "Invited"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 text-right font-semibold text-gray-900">
+                              {fmtRefUsd(r.investedUsd)}
+                            </td>
+                            <td
+                              className={`py-3 pl-2 text-right font-bold ${
+                                r.rewardUsd > 0
+                                  ? "text-indigo-700"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              {r.rewardUsd > 0 ? "+" : ""}
+                              {fmtRefUsd(r.rewardUsd)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="sticky bottom-0 bg-white">
+                        <tr className="font-black">
+                          <td className="pt-3 text-gray-900" colSpan={2}>
+                            Total
+                          </td>
+                          <td className="pt-3 px-2 text-right text-gray-900">
+                            {fmtRefUsd(
+                              visibleReferrals.reduce(
+                                (s, r) => s + r.investedUsd,
+                                0,
+                              ),
+                            )}
+                          </td>
+                          <td className="pt-3 pl-2 text-right text-indigo-700">
+                            {fmtRefUsd(
+                              visibleReferrals.reduce(
+                                (s, r) => s + r.rewardUsd,
+                                0,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -5300,7 +5075,10 @@ export function PublicSaleSonarPage() {
                           </div>
                         )}
                         <p className="text-sm text-white/45 leading-relaxed">
-                          {milestone.desc}
+                          {milestone.desc.replace(
+                            "{onChainPortfolios}",
+                            onChainPortfoliosText,
+                          )}
                         </p>
                       </div>
                     </motion.div>
@@ -5932,13 +5710,16 @@ export function PublicSaleSonarPage() {
                       className="text-2xl font-bold mb-0.5"
                       style={{ color: "#ffffff" }}
                     >
-                      {formatCompactNumber(data?.stats?.portfoliosCreated30d)}+
+                      {formatCompactNumber(
+                        data?.stats?.onChainPortfoliosCreated,
+                      )}
+                      +
                     </div>
                     <div
                       className="text-xs"
                       style={{ color: "rgba(255,255,255,0.4)" }}
                     >
-                      Portfolios Created (30d)
+                      On-chain Portfolios
                     </div>
                   </motion.div>
                   <motion.div
@@ -6235,7 +6016,10 @@ export function PublicSaleSonarPage() {
                     className="text-4xl sm:text-5xl font-black tracking-tight mb-2 tabular-nums"
                     style={{ color: stat.accent }}
                   >
-                    {stat.value}
+                    {stat.value.replace(
+                      "{onChainPortfolios}",
+                      onChainPortfoliosText,
+                    )}
                   </div>
                   <div className="text-sm sm:text-base font-bold text-white mb-1 leading-snug">
                     {stat.label}
@@ -6277,307 +6061,6 @@ export function PublicSaleSonarPage() {
             onClose={() => setLiveTermsOpen(false)}
             // onAccept={() => setLiveTermsAccepted(true)}
           />
-        )}
-      </AnimatePresence>
-
-      {/* ══ REFERRAL FORM MODAL ══ */}
-      <AnimatePresence>
-        {refFormOpen && (
-          <motion.div
-            key="ref-modal-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{
-              background: "rgba(0,0,0,0.55)",
-              backdropFilter: "blur(6px)",
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) closeRefForm();
-            }}
-          >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0, y: 16 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.92, opacity: 0, y: 16 }}
-              transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="relative w-full max-w-sm rounded-3xl overflow-hidden bg-white border border-black/10"
-              style={{
-                boxShadow: "0 32px 80px rgba(0,0,0,0.25)",
-              }}
-            >
-              {/* Top gradient bar */}
-              <div
-                className="h-1.5 w-full"
-                style={{
-                  background:
-                    "linear-gradient(90deg, #818cf8, #6366f1, #22d3ee)",
-                }}
-              />
-
-              <div className="p-6">
-                {/* Close */}
-                <button
-                  onClick={closeRefForm}
-                  className="absolute top-2 right-1 w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-gray-100 text-black/40"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-
-                {/* Always-visible referral code badge */}
-                <div
-                  className="flex items-center gap-3 mb-6 p-3 rounded-2xl"
-                  style={{
-                    background: "rgba(99,102,241,0.07)",
-                    border: "1px solid rgba(99,102,241,0.2)",
-                  }}
-                >
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                    }}
-                  >
-                    <Gift className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                      Referral Code
-                    </div>
-                    <div
-                      className="text-sm font-black"
-                      style={{ color: "#6366f1" }}
-                    >
-                      {formRefCode || "—"}
-                    </div>
-                  </div>
-                  {formRefCode && (
-                    <div
-                      className="text-[10px] font-semibold px-2 py-1 rounded-lg"
-                      style={{
-                        background: "rgba(99,102,241,0.12)",
-                        color: "#6366f1",
-                      }}
-                    >
-                      Active
-                    </div>
-                  )}
-                </div>
-
-                <AnimatePresence mode="wait">
-                  {refSubmitted ? (
-                    <motion.div
-                      key="success"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      className="flex flex-col items-center text-center py-6 gap-4"
-                    >
-                      <div
-                        className="w-16 h-16 rounded-full flex items-center justify-center"
-                        style={{
-                          background: "rgba(34,197,94,0.1)",
-                          border: "2px solid #22c55e",
-                        }}
-                      >
-                        <CheckCircle
-                          className="w-8 h-8"
-                          style={{ color: "#22c55e" }}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xl font-black text-gray-900 mb-1">
-                          Submitted!
-                        </div>
-                        <p className="text-sm text-gray-500">{refSubmitted}</p>
-                      </div>
-                      <button
-                        onClick={closeRefForm}
-                        className="w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                          color: "white",
-                        }}
-                      >
-                        Close
-                      </button>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="form"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="space-y-4"
-                    >
-                      <div>
-                        <h4 className="text-lg font-black text-gray-900 mb-0.5">
-                          Join the Sale
-                        </h4>
-                        <p className="text-xs text-gray-500">
-                          Enter your wallet and select an investment amount.
-                        </p>
-                      </div>
-
-                      {!formRefCode && (
-                        <p className="text-[11px] text-amber-700">
-                          {!isAuthenticated
-                            ? "Open a referral link or sign in to use your own code."
-                            : "Loading your referral code…"}
-                        </p>
-                      )}
-
-                      {/* Wallet address */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1.5">
-                          Wallet Address
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="0x..."
-                          value={refWallet}
-                          onChange={(e) => {
-                            setRefWallet(e.target.value);
-                            setRefFormError(null);
-                          }}
-                          className="w-full px-4 py-3 rounded-xl text-sm font-mono outline-none transition-all"
-                          style={{
-                            background: "rgba(0,0,0,0.03)",
-                            border: !refWallet
-                              ? "1.5px solid rgba(0,0,0,0.1)"
-                              : EVM_ADDRESS_RE.test(refWallet.trim())
-                                ? "1.5px solid #22c55e"
-                                : "1.5px solid #f87171",
-                          }}
-                        />
-                        {refWallet && !EVM_ADDRESS_RE.test(refWallet.trim()) && (
-                          <p className="text-[11px] text-red-500 mt-1">
-                            Enter a valid 0x wallet address
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Amount dropdown */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1.5">
-                          Investment Amount (USDT)
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={refAmount}
-                            onChange={(e) => {
-                              setRefAmount(e.target.value);
-                              setRefFormError(null);
-                            }}
-                            className="w-full appearance-none px-4 py-3 rounded-xl text-sm font-semibold outline-none transition-all pr-10"
-                            style={{
-                              background: "rgba(0,0,0,0.03)",
-                              border: refAmount
-                                ? "1.5px solid #22c55e"
-                                : "1.5px solid rgba(0,0,0,0.1)",
-                              color: refAmount ? "#111" : "#9ca3af",
-                            }}
-                          >
-                            <option value="" disabled>
-                              Select amount…
-                            </option>
-                            {refAmountOptions.map((a) => (
-                              <option key={a} value={String(a)}>
-                                ${a.toLocaleString()}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-400" />
-                        </div>
-                      </div>
-
-                      {/* Email (optional) */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1.5">
-                          Email{" "}
-                          <span className="font-normal text-gray-400">
-                            (optional)
-                          </span>
-                        </label>
-                        <input
-                          type="email"
-                          placeholder="you@example.com"
-                          value={refEmail}
-                          onChange={(e) => {
-                            setRefEmail(e.target.value);
-                            setRefFormError(null);
-                          }}
-                          className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
-                          style={{
-                            background: "rgba(0,0,0,0.03)",
-                            border: "1.5px solid rgba(0,0,0,0.1)",
-                          }}
-                        />
-                      </div>
-
-                      {refFormError && (
-                        <p className="text-[11px] text-red-500">
-                          {refFormError}
-                        </p>
-                      )}
-
-                      {/* Tier preview if amount selected */}
-                      {/* {refAmount &&
-                        (() => {
-                          const num = parseFloat(
-                            refAmount.replace(/[$,]/g, ""),
-                          );
-                          const tier = [...TIERS]
-                            .reverse()
-                            .find((t) => num >= t.minAmount);
-                          return tier && tier.bonusNum > 0 ? (
-                            <div
-                              className="flex items-center gap-2 p-3 rounded-xl"
-                              style={{
-                                background: "rgba(34,197,94,0.07)",
-                                border: "1px solid rgba(34,197,94,0.25)",
-                              }}
-                            >
-                              <Award
-                                className="w-4 h-4 flex-shrink-0"
-                                style={{ color: "#22c55e" }}
-                              />
-                              <p className="text-xs font-semibold text-green-800">
-                                You qualify for{" "}
-                                <span className="font-black">
-                                  +{tier.bonusNum}% bonus tokens
-                                </span>{" "}
-                                at this amount ({tier.label}).
-                              </p>
-                            </div>
-                          ) : null;
-                        })()} */}
-
-                      <button
-                        onClick={handleRefSubmit}
-                        disabled={
-                          !formRefCode ||
-                          !EVM_ADDRESS_RE.test(refWallet.trim()) ||
-                          !refAmount ||
-                          refSubmitting
-                        }
-                        className="w-full py-3.5 rounded-xl font-black text-sm transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #818cf8, #6366f1)",
-                          color: "white",
-                        }}
-                      >
-                        {refSubmitting ? "Submitting…" : "Submit"}
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
     </>
