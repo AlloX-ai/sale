@@ -3980,6 +3980,30 @@ export function PublicSaleSonarPage() {
                             />
                           )}
 
+                        {/* Sonar requires telling U.S. investors about the
+                            forced lockup their commitments carry. */}
+                        {!isPrivateSale && publicPurchase.requiresLockup && (
+                          <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3">
+                            <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-gray-700">
+                              <span className="font-bold text-gray-900">
+                                Lockup applies to U.S. investors.
+                              </span>{" "}
+                              Your tokens will be subject to a mandatory vesting
+                              lockup, in addition to your plan's schedule. See
+                              section 6.3 of the{" "}
+                              <button
+                                type="button"
+                                onClick={() => setLiveTermsOpen(true)}
+                                className="underline font-semibold"
+                              >
+                                Sale Terms
+                              </button>
+                              .
+                            </p>
+                          </div>
+                        )}
+
                         {/* CTA */}
                         <button
                           type="button"

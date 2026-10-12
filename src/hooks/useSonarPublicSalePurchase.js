@@ -12,7 +12,7 @@ import {
   formatUnits,
   parseUnits,
 } from "viem";
-import { PrePurchaseFailureReason } from "@echoxyz/sonar-core";
+import { InvestingRegion, PrePurchaseFailureReason } from "@echoxyz/sonar-core";
 import { useSonarClient } from "@echoxyz/sonar-react";
 import {
   PUBLIC_SALE_ETH_ABI,
@@ -157,6 +157,10 @@ const CONTRACT_ERROR_MESSAGES = {
   SafeERC20FailedOperation:
     "The token transfer failed. Check your balance and token approval.",
   ZeroAmount: "Enter an amount greater than zero.",
+  BidMustHaveLockup:
+    "U.S. investors' commitments must include the token lockup. Refresh and try again.",
+  BidLockupCannotBeUndone:
+    "Your commitment already includes the token lockup, which can't be removed.",
 };
 
 export function parsePurchaseError(err) {
@@ -202,6 +206,9 @@ export function useSonarPublicSalePurchase({
   const { mutateAsync: writeContractAsync } = useWriteContract();
 
   const saleSpecificEntityID = entity?.SaleSpecificEntityID ?? null;
+  // The sale forces a vesting lockup on U.S. investors; the contract rejects
+  // their bids without it (Sonar docs: planning/lockup-vesting).
+  const requiresLockup = entity?.InvestingRegion === InvestingRegion.US;
 
   const [saleInfo, setSaleInfo] = useState(null);
   const [saleInfoError, setSaleInfoError] = useState(null);
@@ -433,6 +440,9 @@ export function useSonarPublicSalePurchase({
           chainId: CHAIN_ID,
         });
         const existingTotal = states?.[0]?.currentBid?.amount ?? 0n;
+        // Once a bid has lockup it can't be removed.
+        const lockup =
+          requiresLockup || states?.[0]?.currentBid?.lockup === true;
         const newTotalRaw = existingTotal + incrementRaw;
 
         const maxAmount = BigInt(permit.MaxAmount);
@@ -516,7 +526,7 @@ export function useSonarPublicSalePurchase({
           functionName: "replaceBidWithApproval",
           args: [
             token.address,
-            { lockup: false, price: 0n, amount: newTotalRaw },
+            { lockup, price: 0n, amount: newTotalRaw },
             {
               saleSpecificEntityID: permit.SaleSpecificEntityID,
               saleUUID: permit.SaleUUID,
@@ -570,6 +580,7 @@ export function useSonarPublicSalePurchase({
       getToken,
       loadPosition,
       onBidSubmitted,
+      requiresLockup,
       sonarClient,
       switchToSaleChain,
       walletAddress,
@@ -612,6 +623,7 @@ export function useSonarPublicSalePurchase({
     failure,
     error,
     lastTxHash,
+    requiresLockup,
     commit,
     clearResult,
     refresh: loadPosition,
