@@ -785,20 +785,29 @@ const liveCountdownRenderer = ({
     );
   }
   const parts = [
-    { v: days, l: "d" },
-    { v: hours, l: "h" },
-    { v: minutes, l: "m" },
-    // { v: seconds, l: "s" },
+    { v: days, l: "Days" },
+    { v: hours, l: "Hrs" },
+    { v: minutes, l: "Min" },
+    // { v: seconds, l: "Sec" },
   ];
   return (
-    <div className="flex items-baseline gap-1.5 tabular-nums">
-      {parts.map((p) => (
-        <span key={p.l} className="inline-flex items-baseline gap-0.5">
-          <span className="text-lg md:text-2xl font-bold text-gray-900">
-            {p.v}
-          </span>
-          <span className="text-xs font-semibold text-gray-400">{p.l}</span>
-        </span>
+    <div className="flex items-start gap-1 tabular-nums">
+      {parts.map((p, i) => (
+        <div key={p.l} className="flex items-start gap-1">
+          {i > 0 && (
+            <span className="text-lg md:text-xl font-bold text-indigo-300 leading-9 md:leading-10">
+              :
+            </span>
+          )}
+          <div className="flex flex-col items-center">
+            <span className="min-w-9 md:min-w-10 h-9 md:h-10 px-1 flex items-center justify-center rounded-lg bg-white border border-indigo-100 shadow-sm text-lg md:text-xl font-bold text-gray-900">
+              {pad(p.v)}
+            </span>
+            <span className="mt-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+              {p.l}
+            </span>
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -3270,7 +3279,13 @@ export function PublicSaleSonarPage() {
                         {!isPrivateSale && (
                           <div className="w-full xl:w-auto shrink-0 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 to-white px-4 py-3 xl:min-w-42.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] flex xl:block items-center justify-between gap-3">
                             <div>
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-400 xl:mb-1">
+                              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-400 mb-1.5">
+                                {!liveSaleEnded && (
+                                  <span className="relative flex w-2 h-2">
+                                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                                    <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
+                                  </span>
+                                )}
                                 {liveSaleEnded ? "Status" : "Sale ends in"}
                               </div>
                               {!liveSaleEnded && (
