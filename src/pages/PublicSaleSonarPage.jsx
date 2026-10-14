@@ -761,7 +761,8 @@ function formatCompactNumber(value) {
 }
 
 const SALE_DATE = new Date("2026-10-12T11:59:59Z");
-const LIVE_SALE_END = new Date("2026-09-01T23:59:59Z");
+// Public live sale closes October 19, 12:00 UTC.
+const LIVE_SALE_END = new Date("2026-10-19T12:00:00Z");
 const LIVE_TOTAL_COMMITTED = 1_503_842;
 const LIVE_ASSET_LOGOS = {
   USDC: "https://cdn.allox.ai/allox/tokens/usdc.svg",
@@ -779,7 +780,7 @@ const liveCountdownRenderer = ({
   if (completed) {
     return (
       <span className="text-lg font-bold text-gray-900 tabular-nums">
-        Sale ended
+        Public sale ended
       </span>
     );
   }
@@ -841,6 +842,24 @@ export function PublicSaleSonarPage() {
   }, [entityMenuOpen]);
   const [successCountdown, setSuccessCountdown] = useState(5);
   const [liveAmount, setLiveAmount] = useState("");
+  const [liveSaleEnded, setLiveSaleEnded] = useState(
+    () => Date.now() >= LIVE_SALE_END.getTime(),
+  );
+  useEffect(() => {
+    if (liveSaleEnded) return;
+    let id;
+    const schedule = () => {
+      const remaining = LIVE_SALE_END.getTime() - Date.now();
+      if (remaining <= 0) {
+        setLiveSaleEnded(true);
+        return;
+      }
+      // setTimeout caps at ~24.8 days; re-check in chunks.
+      id = setTimeout(schedule, Math.min(remaining, 2_147_483_647));
+    };
+    schedule();
+    return () => clearTimeout(id);
+  }, [liveSaleEnded]);
   const [liveSaleKind, setLiveSaleKind] = useState("public");
   const [livePlanId, setLivePlanId] = useState("platinum");
   const [liveAsset, setLiveAsset] = useState("USDC");
@@ -1422,9 +1441,11 @@ export function PublicSaleSonarPage() {
       (!wlStatusLoading && Array.isArray(wlStatus?.balanceBreakdown)));
   const liveInsufficientBalance =
     !isPrivateSale && liveAssetBalanceKnown && liveNum > liveAssetBalanceUsd;
+  const publicSaleEnded = !isPrivateSale && liveSaleEnded;
   const liveCanSubmit = isPrivateSale
     ? privateSale.canSubmit
-    : isConnected &&
+    : !liveSaleEnded &&
+      isConnected &&
       isOnSaleChain &&
       publicLiveSonarReady &&
       !publicSaleBlocked &&
@@ -3220,9 +3241,9 @@ export function PublicSaleSonarPage() {
                     {/* Left — contribution form */}
 
                     <div className="lg:col-span-7 glass-card p-5 md:p-6 flex flex-col gap-5 justify-between">
-                      <div className="flex sm:flex-row flex-col items-center justify-between gap-3">
-                        <div className="flex sm:flex-row flex-col sm:items-center justify-between w-full">
-                          <div>
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 xl:gap-4">
+                        <div className="flex sm:flex-row flex-col sm:items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
+                          <div className="min-w-0">
                             <h4 className="text-lg font-bold text-gray-900">
                               Make a Contribution
                             </h4>
@@ -3232,7 +3253,7 @@ export function PublicSaleSonarPage() {
                                 : "Pick a plan, enter an amount, then review before confirming."}
                             </p>
                           </div>
-                          <div className="flex items-center gap-2 rounded-lg p-1">
+                          <div className="flex items-center gap-2 rounded-lg p-1 shrink-0">
                             <p className="text-sm text-gray-500">Network:</p>
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1">
                               <img
@@ -3246,31 +3267,30 @@ export function PublicSaleSonarPage() {
                             </span>
                           </div>
                         </div>
-                        {/* <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 to-white px-4 py-3 min-w-42.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-400 mb-1">
-                              Time Remaining
+                        {!isPrivateSale && (
+                          <div className="w-full xl:w-auto shrink-0 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 to-white px-4 py-3 xl:min-w-42.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] flex xl:block items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-400 xl:mb-1">
+                                {liveSaleEnded ? "Status" : "Sale ends in"}
+                              </div>
+                              {!liveSaleEnded && (
+                                <div className="text-[11px] text-gray-400 mt-0.5 xl:hidden">
+                                  Oct 19, 12:00 UTC
+                                </div>
+                              )}
                             </div>
-                            {isPrivateSale ? (
-                              privateSale.saleLoading &&
-                              privateSale.countdownSeconds == null ? (
-                                <span className="text-sm text-gray-400">
-                                  Loading…
-                                </span>
-                              ) : (
-                                <Countdown
-                                  date={LIVE_SALE_END}
-                                  renderer={liveCountdownRenderer}
-                                />
-                              )
-                            ) : (
-                              <Countdown
-                                date={LIVE_SALE_END}
-                                renderer={liveCountdownRenderer}
-                              />
+                            <Countdown
+                              date={LIVE_SALE_END}
+                              renderer={liveCountdownRenderer}
+                              onComplete={() => setLiveSaleEnded(true)}
+                            />
+                            {!liveSaleEnded && (
+                              <div className="text-[11px] text-gray-400 mt-1 hidden xl:block">
+                                Oct 19, 12:00 UTC
+                              </div>
                             )}
                           </div>
-                        </div> */}
+                        )}
                       </div>
 
                       {isPrivateSale &&
@@ -4008,7 +4028,9 @@ export function PublicSaleSonarPage() {
                         <button
                           type="button"
                           disabled={
-                            isPrivateSale && privateSale.contributing
+                            publicSaleEnded
+                              ? true
+                              : isPrivateSale && privateSale.contributing
                               ? true
                               : isPrivateSale && !isConnected
                                 ? false
@@ -4029,6 +4051,7 @@ export function PublicSaleSonarPage() {
                                             privateSale.contributing)
                           }
                           onClick={() => {
+                            if (publicSaleEnded) return;
                             if (!isPrivateSale) {
                               if (!isConnected) {
                                 dispatch(setWalletModal(true));
@@ -4071,7 +4094,9 @@ export function PublicSaleSonarPage() {
                             privateSale.contribute();
                           }}
                           className={`w-full font-bold py-4 rounded-2xl text-base transition-all duration-200 ${
-                            (!isPrivateSale && !isConnected) ||
+                            publicSaleEnded
+                              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                              : (!isPrivateSale && !isConnected) ||
                             (!isPrivateSale &&
                               isConnected &&
                               !isAuthenticated) ||
@@ -4086,7 +4111,9 @@ export function PublicSaleSonarPage() {
                               : "bg-gray-200 text-gray-500 cursor-not-allowed"
                           }`}
                         >
-                          {isPrivateSale && privateSale.contributing
+                          {publicSaleEnded
+                            ? "Public sale ended"
+                            : isPrivateSale && privateSale.contributing
                             ? "Processing…"
                             : !isPrivateSale && publicPurchase.busy
                               ? PURCHASE_STEP_LABELS[publicPurchase.step] ||
