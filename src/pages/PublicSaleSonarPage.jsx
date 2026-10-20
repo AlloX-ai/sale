@@ -200,115 +200,51 @@ const partners = [
 ];
 
 // const SALE_DATE = new Date("2026-05-31T23:59:59Z");
-const PRIVATE_ALLOC_DATA = [
-  {
-    name: "Community",
-    pct: 35,
-    tge: "5%",
-    cliff: "None",
-    vesting: "48 mo. linear",
-    color: "#818cf8",
-  },
-  {
-    name: "Ecosystem",
-    pct: 30,
-    tge: "5%",
-    cliff: "12 mo.",
-    vesting: "24 mo. linear",
-    color: "#22d3ee",
-  },
-  {
-    name: "Investors",
-    pct: 12,
-    tge: "0%",
-    cliff: "12 mo.",
-    vesting: "24 mo. linear",
-    color: "#fb923c",
-  },
-  {
-    name: "Team",
-    pct: 12,
-    tge: "0%",
-    cliff: "12 mo.",
-    vesting: "36 mo. linear",
-    color: "#e879f9",
-  },
-  {
-    name: "Liquidity",
-    pct: 5,
-    tge: "100%",
-    cliff: "None",
-    vesting: "N/A",
-    color: "#4ade80",
-  },
-  {
-    name: "Private Round",
-    pct: 3,
-    tge: "100%",
-    cliff: "None",
-    vesting: "N/A",
-    color: "#facc15",
-  },
-  {
-    name: "Public Round",
-    pct: 3,
-    tge: "100%",
-    cliff: "None",
-    vesting: "N/A",
-    color: "#f97316",
-  },
-];
-
+const TOTAL_SUPPLY = 1_000_000_000;
 const ALLOC_DATA = [
   {
     name: "Community",
     pct: 35,
-    tge: "5%",
+    tge: 5,
     cliff: "None",
     vesting: "48 mo. linear",
     color: "#818cf8",
   },
   {
     name: "Ecosystem",
-    pct: 30,
-    tge: "5%",
-    cliff: "12 mo.",
-    vesting: "24 mo. linear",
+    pct: 35,
+    tge: 20,
+    cliff: "None",
+    vesting: "36 mo. linear",
     color: "#22d3ee",
   },
   {
     name: "Investors",
     pct: 12,
-    tge: "0%",
+    tge: 2,
     cliff: "12 mo.",
     vesting: "24 mo. linear",
     color: "#fb923c",
   },
   {
     name: "Team",
-    pct: 13,
-    tge: "0%",
+    pct: 12,
+    tge: 0,
     cliff: "12 mo.",
     vesting: "36 mo. linear",
     color: "#e879f9",
   },
   {
     name: "Liquidity",
-    pct: 5,
-    tge: "100%",
+    pct: 6,
+    tge: 100,
     cliff: "None",
     vesting: "N/A",
     color: "#4ade80",
   },
-  {
-    name: "Community Round",
-    pct: 5,
-    tge: "100%",
-    cliff: "None",
-    vesting: "N/A",
-    color: "#facc15",
-  },
 ];
+// Share of total supply unlocked at TGE: sum of pct × tge.
+const ALLOC_TGE_PCT = ALLOC_DATA.reduce((s, d) => s + (d.pct * d.tge) / 100, 0);
 
 const TIERS = [
   {
@@ -5587,7 +5523,7 @@ export function PublicSaleSonarPage() {
                   <ResponsiveContainer width={152} height={152}>
                     <PieChart>
                       <Pie
-                        data={PRIVATE_ALLOC_DATA}
+                        data={ALLOC_DATA}
                         cx={72}
                         cy={72}
                         innerRadius={44}
@@ -5601,7 +5537,7 @@ export function PublicSaleSonarPage() {
                         animationDuration={1000}
                         animationEasing="ease-out"
                       >
-                        {PRIVATE_ALLOC_DATA.map((d, i) => (
+                        {ALLOC_DATA.map((d, i) => (
                           <Cell key={i} fill={d.color} />
                         ))}
                       </Pie>
@@ -5622,93 +5558,107 @@ export function PublicSaleSonarPage() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <div className="text-[9px] text-gray-400 uppercase tracking-widest">
+                    <div className="text-[10px] text-gray-500">
                       Supply
                     </div>
                     <div className="text-lg font-black leading-none">1B</div>
-                    <div className="text-[9px] text-gray-400">$ALLOX</div>
+                    <div className="text-[9px] text-gray-400">ALLOX</div>
                   </div>
                 </div>
               </div>
 
               {/* Table */}
               <div className="flex-1 overflow-x-auto">
-                <div className="flex sm:flex-row flex-col items-center justify-between px-5 pt-4 pb-2 border-b border-gray-100">
+                <div className="flex sm:flex-row flex-col items-center justify-between px-5 pt-4 pb-3">
                   <h3 className="text-base font-bold">ALLOX Tokenomics</h3>
                   <span className="text-xs text-gray-400">
-                    1,000,000,000 supply
+                    {TOTAL_SUPPLY.toLocaleString("en-US")} supply
                   </span>
                 </div>
-                <table className="w-full">
+                <table className="w-full min-w-[640px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                      {["Tranche", "Alloc.", "TGE", "Cliff", "Vesting"].map(
-                        (h) => (
-                          <th
-                            key={h}
-                            className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400"
-                          >
-                            {h}
-                          </th>
-                        ),
-                      )}
+                      {[
+                        "Tranche",
+                        "Alloc.",
+                        "Tokens",
+                        "TGE Unlock",
+                        "Cliff",
+                        "Vesting",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-5 py-3 text-xs font-medium text-gray-500 ${
+                            h === "Tokens" ? "text-right" : "text-left"
+                          }`}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {PRIVATE_ALLOC_DATA.map((d, i) => (
+                    {ALLOC_DATA.map((d, i) => (
                       <motion.tr
-                        key={i}
+                        key={d.name}
                         initial={{ opacity: 0 }}
                         whileInView={{ opacity: 1 }}
                         viewport={{ once: true }}
                         transition={{ delay: i * 0.06, duration: 0.25 }}
-                        className="hover:bg-gray-50/60 transition-colors"
-                        style={{
-                          borderBottom:
-                            i < PRIVATE_ALLOC_DATA.length - 1
-                              ? "1px solid #f9fafb"
-                              : "none",
-                        }}
+                        className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors"
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-3">
                           <div className="flex items-center gap-2">
                             <div
                               className="w-2 h-2 rounded-full flex-shrink-0"
                               style={{ background: d.color }}
                             />
-                            <span className="text-sm font-semibold text-gray-800">
+                            <span className="text-sm font-medium text-gray-900">
                               {d.name}
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className="text-sm font-bold"
-                            style={{ color: d.color }}
-                          >
-                            {d.pct}%
+                        <td className="px-5 py-3 text-sm font-bold text-gray-900">
+                          {d.pct}%
+                        </td>
+                        <td className="px-5 py-3 text-right text-sm text-gray-700 tabular-nums">
+                          {((TOTAL_SUPPLY * d.pct) / 100).toLocaleString(
+                            "en-US",
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className="inline-flex px-2 py-0.5 rounded-md bg-gray-100 text-[11px] font-medium text-gray-600">
+                            {d.tge}%
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold"
-                            style={{
-                              background: `${d.color}18`,
-                              color: d.color,
-                            }}
-                          >
-                            {d.tge}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">
+                        <td className="px-5 py-3 text-sm text-gray-600">
                           {d.cliff}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">
+                        <td className="px-5 py-3 text-sm text-gray-600">
                           {d.vesting}
                         </td>
                       </motion.tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50">
+                      <td className="px-5 py-3 text-sm font-bold text-gray-900">
+                        Total
+                      </td>
+                      <td className="px-5 py-3 text-sm font-bold text-gray-900">
+                        {ALLOC_DATA.reduce((s, d) => s + d.pct, 0)}%
+                      </td>
+                      <td className="px-5 py-3 text-right text-sm font-bold text-gray-900 tabular-nums">
+                        {TOTAL_SUPPLY.toLocaleString("en-US")}
+                      </td>
+                      <td
+                        colSpan={3}
+                        className="px-5 py-3 text-sm text-gray-600"
+                      >
+                        {ALLOC_TGE_PCT.toFixed(0)}% of supply
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
