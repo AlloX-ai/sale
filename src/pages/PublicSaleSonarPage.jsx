@@ -1300,10 +1300,13 @@ export function PublicSaleSonarPage() {
     : livePlanId;
   const livePlan =
     activePlans.find((p) => p.id === effectivePlanId) ?? activePlans[0] ?? null;
+  const publicSaleEnded = !isPrivateSale && liveSaleEnded;
 
   const liveNum = isPrivateSale
     ? privateSale.amountNum
-    : parseFloat(liveAmount) || 0;
+    : publicSaleEnded
+      ? 0
+      : parseFloat(liveAmount) || 0;
   const liveTokensRaw = isPrivateSale
     ? privateSale.allocationPreview
     : livePlan?.price && liveNum
@@ -1345,10 +1348,48 @@ export function PublicSaleSonarPage() {
       : livePlan?.price
         ? publicCommittedUsd / livePlan.price
         : 0;
-  const positionUsd = isPrivateSale ? privateTierUsd : publicCommittedUsd;
+  // Sale ended: show the commitment on the selected tier tab. Transactions
+  // carry their tier when the backend sends it; otherwise the whole position
+  // sits on position.plan.
+  const publicPlanIdOf = (ref) => {
+    const key = String(ref?.key ?? ref?.id ?? ref ?? "").toLowerCase();
+    return (
+      publicPlans.find((p) => p.id === key || String(p.tierId) === key)?.id ??
+      null
+    );
+  };
+  const publicTieredTxs = (
+    Array.isArray(publicPosition?.transactions)
+      ? publicPosition.transactions
+      : []
+  ).filter((tx) => publicPlanIdOf(tx.tierId ?? tx.tier ?? tx.plan));
+  const endedTierUsd = !publicSaleEnded
+    ? 0
+    : publicTieredTxs.length > 0
+      ? publicTieredTxs
+          .filter(
+            (tx) =>
+              publicPlanIdOf(tx.tierId ?? tx.tier ?? tx.plan) === livePlan?.id,
+          )
+          .reduce(
+            (sum, tx) => sum + (Number(tx.amountUsd ?? tx.amount) || 0),
+            0,
+          )
+      : publicPlanIdOf(publicPosition?.plan) === livePlan?.id
+        ? publicCommittedUsd
+        : 0;
+  const positionUsd = isPrivateSale
+    ? privateTierUsd
+    : publicSaleEnded
+      ? endedTierUsd
+      : publicCommittedUsd;
   const positionTokens = isPrivateSale
     ? privateTierAllocation
-    : publicPositionTokens;
+    : publicSaleEnded
+      ? livePlan?.price
+        ? endedTierUsd / livePlan.price
+        : 0
+      : publicPositionTokens;
   const hasPosition = positionTokens > 0 || positionUsd > 0;
   // Prefer live entry preview; fall back to the confirmed position.
   const estimateTokensRaw =
@@ -1356,6 +1397,7 @@ export function PublicSaleSonarPage() {
   // Showing the confirmed public position: use the backend's TGE/locked split.
   const useApiPublicSplit =
     !isPrivateSale &&
+    !publicSaleEnded &&
     liveTokensRaw <= 0 &&
     publicPosition?.availableAtTgeTokens != null &&
     publicPosition?.lockedTokens != null;
@@ -1450,7 +1492,6 @@ export function PublicSaleSonarPage() {
       (!wlStatusLoading && Array.isArray(wlStatus?.balanceBreakdown)));
   const liveInsufficientBalance =
     !isPrivateSale && liveAssetBalanceKnown && liveNum > liveAssetBalanceUsd;
-  const publicSaleEnded = !isPrivateSale && liveSaleEnded;
   const liveCanSubmit = isPrivateSale
     ? privateSale.canSubmit
     : !liveSaleEnded &&
@@ -3247,179 +3288,291 @@ export function PublicSaleSonarPage() {
 
                 {(liveSaleKind === "private" || saleState === "live") && (
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                    {/* Left — contribution form */}
-
-                    <div className="lg:col-span-7 glass-card p-5 md:p-6 flex flex-col gap-5 justify-between">
-                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 xl:gap-4">
-                        <div className="flex sm:flex-row flex-col sm:items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
+                    {/* Left — claim portal once the public sale is over */}
+                    {publicSaleEnded ? (
+                      <div className="lg:col-span-7 glass-card p-5 md:p-6 flex flex-col gap-5">
+                        <div className="flex sm:flex-row flex-col sm:items-start justify-between gap-3">
                           <div className="min-w-0">
                             <h4 className="text-lg font-bold text-gray-900">
-                              Make a Contribution
+                              Claim Portal
                             </h4>
-                            <p className="text-sm text-gray-500 mt-0.5">
-                              {isPrivateSale
-                                ? "Pick a tier, chain, and token, then invest."
-                                : "Pick a plan, enter an amount, then review before confirming."}
+                            <p className="text-sm text-gray-500 mt-0.5 max-w-md">
+                              Our public sale is closed. Thank you for joining
+                              us early. The claim portal will open just before
+                              TGE.
                             </p>
                           </div>
-                          <div className="flex items-center gap-2 rounded-lg p-1 shrink-0">
-                            <p className="text-sm text-gray-500">Network:</p>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1">
-                              <img
-                                src={PUBLIC_SALE_CHAIN_LOGO}
-                                alt=""
-                                className="w-5 h-5 rounded-full"
-                              />
-                              <span className="text-sm font-semibold text-gray-900">
-                                {PUBLIC_SALE_CHAIN_NAME}
-                              </span>
-                            </span>
-                          </div>
+                          <span className="inline-flex items-center gap-1.5 shrink-0 self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                            <Clock className="w-3.5 h-3.5" />
+                            Opens before TGE
+                          </span>
                         </div>
-                        {!isPrivateSale && (
-                          <div className="w-full xl:w-auto shrink-0 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 to-white px-4 py-3 xl:min-w-42.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] flex xl:block items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-400 mb-1.5">
-                                {!liveSaleEnded && (
-                                  <span className="relative flex w-2 h-2">
-                                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                                    <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
-                                  </span>
+                        <ol>
+                          {(() => {
+                            const raisedUsd = Number(
+                              publicSale.stats?.raisedUsd ??
+                                publicSale.sale?.raisedUsd ??
+                                0,
+                            );
+                            return [
+                              {
+                                title: "Public sale ended",
+                                text: raisedUsd
+                                  ? `We raised $${raisedUsd.toLocaleString()} from our community, ${(raisedUsd / PUBLIC_ROUND_TARGET_USD).toFixed(2)}x our target.`
+                                  : "Thank you to everyone who took part.",
+                                status: "done",
+                              },
+                              {
+                                title: "Allocations finalized",
+                                text: "We reviewed every commitment and confirmed final allocations.",
+                                status: "done",
+                              },
+                              {
+                                title: "Claim portal opens",
+                                text: "You connect your wallet and see exactly what you can claim.",
+                                status: "active",
+                              },
+                              {
+                                title: "Token Generation Event",
+                                text: "ALLOX goes live and the first unlocks start.",
+                                label: "TGE",
+                              },
+                              {
+                                title: "Unlocks follow your plan",
+                                text: "Your tokens unlock on the schedule of the plan you chose.",
+                                label: "After TGE",
+                              },
+                            ];
+                          })().map((step, i, steps) => (
+                            <li
+                              key={step.title}
+                              className="relative flex gap-3 pb-5 last:pb-0"
+                            >
+                              {i < steps.length - 1 && (
+                                <span
+                                  className={`absolute left-3 top-6 -bottom-0 w-0.5 -translate-x-1/2 ${
+                                    step.status === "done"
+                                      ? "bg-emerald-600"
+                                      : "bg-gray-200"
+                                  }`}
+                                />
+                              )}
+                              <span
+                                className={`relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                                  step.status === "done"
+                                    ? "bg-emerald-700 text-white"
+                                    : step.status === "active"
+                                      ? "border-2 border-amber-400 bg-amber-50 text-amber-700"
+                                      : "border border-gray-200 bg-white text-gray-400"
+                                }`}
+                              >
+                                {step.status === "done" ? (
+                                  <Check className="w-3.5 h-3.5" />
+                                ) : (
+                                  i + 1
                                 )}
-                                {liveSaleEnded ? "Status" : "Sale ends in"}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <span className="text-sm font-bold text-gray-900">
+                                    {step.title}
+                                  </span>
+                                  <span
+                                    className={`shrink-0 text-xs font-semibold ${
+                                      step.status === "done"
+                                        ? "text-emerald-700"
+                                        : step.status === "active"
+                                          ? "text-amber-700"
+                                          : "text-gray-500"
+                                    }`}
+                                  >
+                                    {step.status === "done"
+                                      ? "Done"
+                                      : step.status === "active"
+                                        ? "In progress"
+                                        : step.label}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                  {step.text}
+                                </p>
                               </div>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    ) : (
+                      <div className="lg:col-span-7 glass-card p-5 md:p-6 flex flex-col gap-5 justify-between">
+                        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 xl:gap-4">
+                          <div className="flex sm:flex-row flex-col sm:items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
+                            <div className="min-w-0">
+                              <h4 className="text-lg font-bold text-gray-900">
+                                Make a Contribution
+                              </h4>
+                              <p className="text-sm text-gray-500 mt-0.5">
+                                {isPrivateSale
+                                  ? "Pick a tier, chain, and token, then invest."
+                                  : "Pick a plan, enter an amount, then review before confirming."}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 rounded-lg p-1 shrink-0">
+                              <p className="text-sm text-gray-500">Network:</p>
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1">
+                                <img
+                                  src={PUBLIC_SALE_CHAIN_LOGO}
+                                  alt=""
+                                  className="w-5 h-5 rounded-full"
+                                />
+                                <span className="text-sm font-semibold text-gray-900">
+                                  {PUBLIC_SALE_CHAIN_NAME}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                          {!isPrivateSale && (
+                            <div className="w-full xl:w-auto shrink-0 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 to-white px-4 py-3 xl:min-w-42.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] flex xl:block items-center justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-400 mb-1.5">
+                                  {!liveSaleEnded && (
+                                    <span className="relative flex w-2 h-2">
+                                      <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                                      <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
+                                    </span>
+                                  )}
+                                  {liveSaleEnded ? "Status" : "Sale ends in"}
+                                </div>
+                                {!liveSaleEnded && (
+                                  <div className="text-[11px] text-gray-400 mt-0.5 xl:hidden">
+                                    Oct 19, 12:00 UTC
+                                  </div>
+                                )}
+                              </div>
+                              <Countdown
+                                date={LIVE_SALE_END}
+                                renderer={liveCountdownRenderer}
+                                onComplete={() => setLiveSaleEnded(true)}
+                              />
                               {!liveSaleEnded && (
-                                <div className="text-[11px] text-gray-400 mt-0.5 xl:hidden">
+                                <div className="text-[11px] text-gray-400 mt-1 hidden xl:block">
                                   Oct 19, 12:00 UTC
                                 </div>
                               )}
                             </div>
-                            <Countdown
-                              date={LIVE_SALE_END}
-                              renderer={liveCountdownRenderer}
-                              onComplete={() => setLiveSaleEnded(true)}
-                            />
-                            {!liveSaleEnded && (
-                              <div className="text-[11px] text-gray-400 mt-1 hidden xl:block">
-                                Oct 19, 12:00 UTC
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
 
-                      {isPrivateSale &&
-                        !privateSale.saleLoading &&
-                        !privateSale.saleError &&
-                        privateSale.plans.length === 0 && (
-                          <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
-                            <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                            <p className="text-xs text-amber-800">
-                              Private sale tiers are not available yet. Please
-                              refresh the page in a moment.
+                        {isPrivateSale &&
+                          !privateSale.saleLoading &&
+                          !privateSale.saleError &&
+                          privateSale.plans.length === 0 && (
+                            <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                              <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                              <p className="text-xs text-amber-800">
+                                Private sale tiers are not available yet. Please
+                                refresh the page in a moment.
+                              </p>
+                            </div>
+                          )}
+
+                        {isPrivateSale && privateSale.saleError && (
+                          <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-red-700">
+                              {privateSale.saleError}
                             </p>
                           </div>
                         )}
 
-                      {isPrivateSale && privateSale.saleError && (
-                        <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
-                          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-red-700">
-                            {privateSale.saleError}
-                          </p>
-                        </div>
-                      )}
-
-                      {isPrivateSale && isConnected && !isAuthenticated && (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
-                          <div className="flex items-start gap-3">
-                            <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                            <div className="min-w-0 flex-1">
-                              <h5 className="font-bold text-gray-900 mb-0.5">
-                                Sign in to contribute
-                              </h5>
-                              <p className="text-sm text-gray-600">
-                                Sign in to invest.
-                              </p>
+                        {isPrivateSale && isConnected && !isAuthenticated && (
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+                            <div className="flex items-start gap-3">
+                              <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <h5 className="font-bold text-gray-900 mb-0.5">
+                                  Sign in to contribute
+                                </h5>
+                                <p className="text-sm text-gray-600">
+                                  Sign in to invest.
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      <>
-                        {/* Plan selector */}
-                        <div>
-                          <p className="text-sm font-semibold text-gray-600 mb-2.5">
-                            Choose a plan
-                          </p>
-                          {isPrivateSale &&
-                          privateSale.saleLoading &&
-                          activePlans.length === 0 ? (
-                            <div className="grid sm:grid-cols-3 grid-cols-1 gap-2.5">
-                              {[0, 1, 2].map((i) => (
-                                <div
-                                  key={i}
-                                  className="h-28 rounded-2xl border-2 border-gray-100 bg-gray-50 animate-pulse"
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="grid sm:grid-cols-3 grid-cols-1 gap-2.5">
-                              {activePlans.map((p) => {
-                                const selected = effectivePlanId === p.id;
-                                return (
-                                  <button
-                                    key={`${liveSaleKind}-${p.id}`}
-                                    type="button"
-                                    onClick={() =>
-                                      isPrivateSale
-                                        ? privateSale.setSelectedPlanId(p.id)
-                                        : setLivePlanId(p.id)
-                                    }
-                                    className={`relative text-left p-3.5 rounded-2xl border-2 transition-all duration-200 ${
-                                      selected
-                                        ? isPrivateSale
-                                          ? "border-amber-500 bg-amber-50/80 shadow-[0_0_0_4px_rgba(245,158,11,0.12)] scale-[1.01]"
-                                          : "border-black bg-gray-50 shadow-[0_0_0_4px_rgba(0,0,0,0.08)] scale-[1.01]"
-                                        : "border-gray-200/80 bg-white/70 hover:border-gray-400 hover:bg-white hover:shadow-md"
-                                    }`}
-                                  >
-                                    {p.premium && (
-                                      <span className="absolute -top-2 right-2 bg-amber-400 text-amber-950 text-[10px] font-black tracking-wide px-2 py-0.5 rounded-md shadow-sm">
-                                        PREMIUM
-                                      </span>
-                                    )}
-                                    <div
-                                      className={`text-base font-bold ${
+                        <>
+                          {/* Plan selector */}
+                          <div>
+                            <p className="text-sm font-semibold text-gray-600 mb-2.5">
+                              Choose a plan
+                            </p>
+                            {isPrivateSale &&
+                            privateSale.saleLoading &&
+                            activePlans.length === 0 ? (
+                              <div className="grid sm:grid-cols-3 grid-cols-1 gap-2.5">
+                                {[0, 1, 2].map((i) => (
+                                  <div
+                                    key={i}
+                                    className="h-28 rounded-2xl border-2 border-gray-100 bg-gray-50 animate-pulse"
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="grid sm:grid-cols-3 grid-cols-1 gap-2.5">
+                                {activePlans.map((p) => {
+                                  const selected = effectivePlanId === p.id;
+                                  return (
+                                    <button
+                                      key={`${liveSaleKind}-${p.id}`}
+                                      type="button"
+                                      onClick={() =>
+                                        isPrivateSale
+                                          ? privateSale.setSelectedPlanId(p.id)
+                                          : setLivePlanId(p.id)
+                                      }
+                                      className={`relative text-left p-3.5 rounded-2xl border-2 transition-all duration-200 ${
                                         selected
                                           ? isPrivateSale
-                                            ? "text-amber-950"
-                                            : "text-black"
-                                          : "text-gray-900"
+                                            ? "border-amber-500 bg-amber-50/80 shadow-[0_0_0_4px_rgba(245,158,11,0.12)] scale-[1.01]"
+                                            : "border-black bg-gray-50 shadow-[0_0_0_4px_rgba(0,0,0,0.08)] scale-[1.01]"
+                                          : "border-gray-200/80 bg-white/70 hover:border-gray-400 hover:bg-white hover:shadow-md"
                                       }`}
                                     >
-                                      {p.name}
-                                    </div>
-                                    <div
-                                      className={`text-sm mt-1 font-medium ${
-                                        selected
-                                          ? isPrivateSale
-                                            ? "text-amber-700"
-                                            : "text-black"
-                                          : "text-gray-500"
-                                      }`}
-                                    >
-                                      {p.discount}% discount
-                                    </div>
-                                    <div className="text-xs text-gray-400 mt-0.5">
-                                      ${(p.fdv / 1_000_000).toFixed(0)}M FDV
-                                    </div>
-                                    {/* {isPrivateSale && p.price > 0 && (
+                                      {p.premium && (
+                                        <span className="absolute -top-2 right-2 bg-amber-400 text-amber-950 text-[10px] font-black tracking-wide px-2 py-0.5 rounded-md shadow-sm">
+                                          PREMIUM
+                                        </span>
+                                      )}
+                                      <div
+                                        className={`text-base font-bold ${
+                                          selected
+                                            ? isPrivateSale
+                                              ? "text-amber-950"
+                                              : "text-black"
+                                            : "text-gray-900"
+                                        }`}
+                                      >
+                                        {p.name}
+                                      </div>
+                                      <div
+                                        className={`text-sm mt-1 font-medium ${
+                                          selected
+                                            ? isPrivateSale
+                                              ? "text-amber-700"
+                                              : "text-black"
+                                            : "text-gray-500"
+                                        }`}
+                                      >
+                                        {p.discount}% discount
+                                      </div>
+                                      <div className="text-xs text-gray-400 mt-0.5">
+                                        ${(p.fdv / 1_000_000).toFixed(0)}M FDV
+                                      </div>
+                                      {/* {isPrivateSale && p.price > 0 && (
                                         <div className="text-xs text-gray-500 mt-1">
                                           ${p.price} / ALLOX
                                         </div>
                                       )} */}
-                                    {/* {isPrivateSale &&
+                                      {/* {isPrivateSale &&
                                         Number(p.contributions) > 0 && (
                                           <div className="text-[10px] text-gray-400 mt-1">
                                             {Number(
@@ -3428,745 +3581,756 @@ export function PublicSaleSonarPage() {
                                             contributions
                                           </div>
                                         )} */}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
 
-                        {/* Chain + Amount */}
-                        <div>
-                          <div
-                            className={`grid gap-3 ${
-                              isPrivateSale && privateSale.chains.length > 0
-                                ? "grid-cols-1 sm:grid-cols-[minmax(148px,180px)_1fr]"
-                                : "grid-cols-1"
-                            }`}
-                          >
-                            {isPrivateSale && privateSale.chains.length > 0 && (
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-gray-600 mb-2">
-                                  Chain
-                                </p>
-                                <div
-                                  className="relative"
-                                  ref={liveChainMenuRef}
-                                >
-                                  <button
-                                    type="button"
-                                    disabled={privateSale.switchingChain}
-                                    onClick={() => {
-                                      setLiveAssetOpen(false);
-                                      setLiveChainOpen((o) => !o);
-                                    }}
-                                    className={`w-full h-[46px] flex items-center gap-2.5 px-3 rounded-xl border-2 bg-white/80 text-sm font-semibold transition-all disabled:opacity-60 ${
-                                      liveChainOpen
-                                        ? "border-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
-                                        : "border-gray-200 hover:border-gray-300"
-                                    }`}
-                                  >
-                                    <img
-                                      src={
-                                        CHAIN_LOGOS[
-                                          privateSale.selectedChainKey
-                                        ] || CHAIN_LOGOS.BSC
-                                      }
-                                      alt=""
-                                      className="w-4 h-4 rounded-full shrink-0"
-                                    />
-                                    <span className="flex-1 text-left text-gray-900 truncate">
-                                      {privateSale.selectedChainKey === "BSC"
-                                        ? "BNB Chain"
-                                        : privateSale.selectedChainKey === "ETH"
-                                          ? "Ethereum"
-                                          : privateSale.selectedChainKey ===
-                                              "BASE"
-                                            ? "Base"
+                          {/* Chain + Amount */}
+                          <div>
+                            <div
+                              className={`grid gap-3 ${
+                                isPrivateSale && privateSale.chains.length > 0
+                                  ? "grid-cols-1 sm:grid-cols-[minmax(148px,180px)_1fr]"
+                                  : "grid-cols-1"
+                              }`}
+                            >
+                              {isPrivateSale &&
+                                privateSale.chains.length > 0 && (
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-gray-600 mb-2">
+                                      Chain
+                                    </p>
+                                    <div
+                                      className="relative"
+                                      ref={liveChainMenuRef}
+                                    >
+                                      <button
+                                        type="button"
+                                        disabled={privateSale.switchingChain}
+                                        onClick={() => {
+                                          setLiveAssetOpen(false);
+                                          setLiveChainOpen((o) => !o);
+                                        }}
+                                        className={`w-full h-[46px] flex items-center gap-2.5 px-3 rounded-xl border-2 bg-white/80 text-sm font-semibold transition-all disabled:opacity-60 ${
+                                          liveChainOpen
+                                            ? "border-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
+                                            : "border-gray-200 hover:border-gray-300"
+                                        }`}
+                                      >
+                                        <img
+                                          src={
+                                            CHAIN_LOGOS[
+                                              privateSale.selectedChainKey
+                                            ] || CHAIN_LOGOS.BSC
+                                          }
+                                          alt=""
+                                          className="w-4 h-4 rounded-full shrink-0"
+                                        />
+                                        <span className="flex-1 text-left text-gray-900 truncate">
+                                          {privateSale.selectedChainKey ===
+                                          "BSC"
+                                            ? "BNB Chain"
                                             : privateSale.selectedChainKey ===
-                                                "SOL"
-                                              ? "Solana"
-                                              : privateSale.selectedChainKey ||
-                                                "Select"}
+                                                "ETH"
+                                              ? "Ethereum"
+                                              : privateSale.selectedChainKey ===
+                                                  "BASE"
+                                                ? "Base"
+                                                : privateSale.selectedChainKey ===
+                                                    "SOL"
+                                                  ? "Solana"
+                                                  : privateSale.selectedChainKey ||
+                                                    "Select"}
+                                        </span>
+                                        {privateSale.switchingChain ? (
+                                          <span className="w-3.5 h-3.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                                        ) : (
+                                          <ChevronDown
+                                            className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${
+                                              liveChainOpen ? "rotate-180" : ""
+                                            }`}
+                                          />
+                                        )}
+                                      </button>
+                                      {liveChainOpen && (
+                                        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+                                          {privateSale.availableChains.map(
+                                            (chain) => {
+                                              const selected =
+                                                privateSale.selectedChainKey ===
+                                                chain.key;
+                                              return (
+                                                <button
+                                                  key={chain.key}
+                                                  type="button"
+                                                  disabled={
+                                                    privateSale.switchingChain
+                                                  }
+                                                  onClick={() => {
+                                                    privateSale.selectChain(
+                                                      chain.key,
+                                                    );
+                                                    setLiveChainOpen(false);
+                                                  }}
+                                                  className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-left transition-colors disabled:opacity-50 ${
+                                                    selected
+                                                      ? "bg-amber-50 text-amber-950"
+                                                      : "text-gray-700 hover:bg-gray-50"
+                                                  }`}
+                                                >
+                                                  <img
+                                                    src={
+                                                      CHAIN_LOGOS[chain.key] ||
+                                                      CHAIN_LOGOS.BSC
+                                                    }
+                                                    alt=""
+                                                    className="w-4 h-4 rounded-full"
+                                                  />
+                                                  {chain.key === "BSC"
+                                                    ? "BNB Chain"
+                                                    : chain.key === "ETH"
+                                                      ? "Ethereum"
+                                                      : chain.key === "BASE"
+                                                        ? "Base"
+                                                        : "Solana"}
+                                                </button>
+                                              );
+                                            },
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                              <div className="min-w-0">
+                                <div className="flex items-center justify-between mb-2">
+                                  <label className="text-sm font-semibold text-gray-600">
+                                    Amount
+                                  </label>
+                                  <span className="text-xs font-medium text-gray-400">
+                                    ${liveMinUsd.toLocaleString()} to $
+                                    {liveMaxUsd.toLocaleString()}
+                                  </span>
+                                </div>
+
+                                <div
+                                  className={`relative flex items-stretch rounded-xl border-2 border-gray-200 bg-white/80 focus-within:border-indigo-500 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.1)] transition-all ${
+                                    isPrivateSale
+                                      ? "focus-within:border-amber-500 focus-within:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
+                                      : ""
+                                  }`}
+                                >
+                                  <div className="relative flex-1">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-base">
+                                      $
                                     </span>
-                                    {privateSale.switchingChain ? (
-                                      <span className="w-3.5 h-3.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0" />
-                                    ) : (
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      autoComplete="off"
+                                      maxLength={isPrivateSale ? 10 : 6}
+                                      value={
+                                        isPrivateSale
+                                          ? privateSale.amountUsd
+                                          : liveAmount
+                                      }
+                                      onChange={(e) =>
+                                        isPrivateSale
+                                          ? privateSale.setAmountUsd(
+                                              e.target.value,
+                                            )
+                                          : setLiveAmount(e.target.value)
+                                      }
+                                      placeholder="0"
+                                      disabled={
+                                        isPrivateSale &&
+                                        (!privateSale.saleActive ||
+                                          privateSale.saleEnded)
+                                      }
+                                      className="w-full h-[46px] pl-7 pr-2 bg-transparent focus:outline-none text-xl font-bold text-gray-900 placeholder:text-gray-300 tabular-nums disabled:opacity-50"
+                                    />
+                                  </div>
+                                  <div
+                                    className="relative border-l border-gray-200"
+                                    ref={liveAssetMenuRef}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setLiveChainOpen(false);
+                                        setLiveAssetOpen((o) => !o);
+                                      }}
+                                      className="h-[46px] flex items-center gap-1.5 px-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-r-[10px] transition-colors"
+                                    >
+                                      <img
+                                        src={
+                                          isPrivateSale
+                                            ? TOKEN_LOGOS[
+                                                privateSale.selectedToken
+                                                  ?.symbol
+                                              ] || TOKEN_LOGOS.USDC
+                                            : LIVE_ASSET_LOGOS[liveAsset]
+                                        }
+                                        alt={
+                                          isPrivateSale
+                                            ? privateSale.selectedToken?.symbol
+                                            : liveAsset
+                                        }
+                                        className="w-4 h-4 rounded-full flex-shrink-0"
+                                      />
+                                      {isPrivateSale
+                                        ? privateSale.selectedToken?.symbol ||
+                                          "—"
+                                        : liveAsset}
                                       <ChevronDown
-                                        className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${
-                                          liveChainOpen ? "rotate-180" : ""
+                                        className={`w-3.5 h-3.5 text-gray-400 transition-transform ${
+                                          liveAssetOpen ? "rotate-180" : ""
                                         }`}
                                       />
-                                    )}
-                                  </button>
-                                  {liveChainOpen && (
-                                    <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-                                      {privateSale.availableChains.map(
-                                        (chain) => {
-                                          const selected =
-                                            privateSale.selectedChainKey ===
-                                            chain.key;
+                                    </button>
+                                    {liveAssetOpen && (
+                                      <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[140px] rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+                                        {(isPrivateSale
+                                          ? privateSale.availableTokens
+                                          : LIVE_ASSETS.map((symbol) => ({
+                                              symbol,
+                                            }))
+                                        ).map((asset) => {
+                                          const symbol = asset.symbol || asset;
                                           return (
                                             <button
-                                              key={chain.key}
+                                              key={symbol}
                                               type="button"
-                                              disabled={
-                                                privateSale.switchingChain
-                                              }
                                               onClick={() => {
-                                                privateSale.selectChain(
-                                                  chain.key,
-                                                );
-                                                setLiveChainOpen(false);
+                                                if (isPrivateSale) {
+                                                  privateSale.setSelectedTokenSymbol(
+                                                    symbol,
+                                                  );
+                                                } else {
+                                                  setLiveAsset(symbol);
+                                                }
+                                                setLiveAssetOpen(false);
                                               }}
-                                              className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-left transition-colors disabled:opacity-50 ${
-                                                selected
-                                                  ? "bg-amber-50 text-amber-950"
+                                              className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-left transition-colors ${
+                                                (
+                                                  isPrivateSale
+                                                    ? privateSale.selectedToken
+                                                        ?.symbol === symbol
+                                                    : liveAsset === symbol
+                                                )
+                                                  ? isPrivateSale
+                                                    ? "bg-amber-50 text-amber-950"
+                                                    : "bg-indigo-50 text-indigo-700"
                                                   : "text-gray-700 hover:bg-gray-50"
                                               }`}
                                             >
                                               <img
                                                 src={
-                                                  CHAIN_LOGOS[chain.key] ||
-                                                  CHAIN_LOGOS.BSC
+                                                  isPrivateSale
+                                                    ? TOKEN_LOGOS[symbol] ||
+                                                      TOKEN_LOGOS.USDC
+                                                    : LIVE_ASSET_LOGOS[symbol]
                                                 }
-                                                alt=""
+                                                alt={symbol}
                                                 className="w-4 h-4 rounded-full"
                                               />
-                                              {chain.key === "BSC"
-                                                ? "BNB Chain"
-                                                : chain.key === "ETH"
-                                                  ? "Ethereum"
-                                                  : chain.key === "BASE"
-                                                    ? "Base"
-                                                    : "Solana"}
+                                              {symbol}
                                             </button>
                                           );
-                                        },
-                                      )}
-                                    </div>
-                                  )}
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            )}
+                            </div>
 
-                            <div className="min-w-0">
-                              <div className="flex items-center justify-between mb-2">
-                                <label className="text-sm font-semibold text-gray-600">
-                                  Amount
-                                </label>
-                                <span className="text-xs font-medium text-gray-400">
-                                  ${liveMinUsd.toLocaleString()} to $
-                                  {liveMaxUsd.toLocaleString()}
-                                </span>
-                              </div>
-
-                              <div
-                                className={`relative flex items-stretch rounded-xl border-2 border-gray-200 bg-white/80 focus-within:border-indigo-500 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.1)] transition-all ${
-                                  isPrivateSale
-                                    ? "focus-within:border-amber-500 focus-within:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
-                                    : ""
-                                }`}
-                              >
-                                <div className="relative flex-1">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-base">
-                                    $
-                                  </span>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    autoComplete="off"
-                                    maxLength={isPrivateSale ? 10 : 6}
-                                    value={
-                                      isPrivateSale
-                                        ? privateSale.amountUsd
-                                        : liveAmount
-                                    }
-                                    onChange={(e) =>
-                                      isPrivateSale
-                                        ? privateSale.setAmountUsd(
-                                            e.target.value,
-                                          )
-                                        : setLiveAmount(e.target.value)
-                                    }
-                                    placeholder="0"
-                                    disabled={
-                                      isPrivateSale &&
-                                      (!privateSale.saleActive ||
-                                        privateSale.saleEnded)
-                                    }
-                                    className="w-full h-[46px] pl-7 pr-2 bg-transparent focus:outline-none text-xl font-bold text-gray-900 placeholder:text-gray-300 tabular-nums disabled:opacity-50"
-                                  />
-                                </div>
-                                <div
-                                  className="relative border-l border-gray-200"
-                                  ref={liveAssetMenuRef}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setLiveChainOpen(false);
-                                      setLiveAssetOpen((o) => !o);
-                                    }}
-                                    className="h-[46px] flex items-center gap-1.5 px-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-r-[10px] transition-colors"
-                                  >
-                                    <img
-                                      src={
+                            <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
+                              <div className="flex flex-wrap gap-2">
+                                {LIVE_PRESETS.map((p) => {
+                                  const v =
+                                    p === "MAX"
+                                      ? String(
+                                          isPrivateSale
+                                            ? privateMaxAmount
+                                            : liveMaxAmount,
+                                        )
+                                      : p.replace(/[$,]/g, "");
+                                  const currentAmount = isPrivateSale
+                                    ? privateSale.amountUsd
+                                    : liveAmount;
+                                  const active = currentAmount === v;
+                                  const disabled =
+                                    p === "MAX" &&
+                                    (isPrivateSale
+                                      ? !isConnected ||
+                                        privateSale.tokenBalanceLoading ||
+                                        privateMaxAmount <= 0
+                                      : !isConnected ||
+                                        wlStatusLoading ||
+                                        liveMaxAmount <= 0);
+                                  return (
+                                    <button
+                                      key={p}
+                                      type="button"
+                                      disabled={disabled}
+                                      onClick={() =>
                                         isPrivateSale
-                                          ? TOKEN_LOGOS[
-                                              privateSale.selectedToken?.symbol
-                                            ] || TOKEN_LOGOS.USDC
-                                          : LIVE_ASSET_LOGOS[liveAsset]
+                                          ? privateSale.setAmountUsd(v)
+                                          : setLiveAmount(v)
                                       }
-                                      alt={
-                                        isPrivateSale
-                                          ? privateSale.selectedToken?.symbol
-                                          : liveAsset
-                                      }
-                                      className="w-4 h-4 rounded-full flex-shrink-0"
-                                    />
-                                    {isPrivateSale
-                                      ? privateSale.selectedToken?.symbol || "—"
-                                      : liveAsset}
-                                    <ChevronDown
-                                      className={`w-3.5 h-3.5 text-gray-400 transition-transform ${
-                                        liveAssetOpen ? "rotate-180" : ""
+                                      className={`min-w-[56px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        active
+                                          ? "bg-black text-white shadow-sm"
+                                          : "border-gray-200 bg-white/70 text-gray-700 hover:border-black-300 hover:bg-black/5"
                                       }`}
-                                    />
-                                  </button>
-                                  {liveAssetOpen && (
-                                    <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[140px] rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-                                      {(isPrivateSale
-                                        ? privateSale.availableTokens
-                                        : LIVE_ASSETS.map((symbol) => ({
-                                            symbol,
-                                          }))
-                                      ).map((asset) => {
-                                        const symbol = asset.symbol || asset;
-                                        return (
-                                          <button
-                                            key={symbol}
-                                            type="button"
-                                            onClick={() => {
-                                              if (isPrivateSale) {
-                                                privateSale.setSelectedTokenSymbol(
-                                                  symbol,
-                                                );
-                                              } else {
-                                                setLiveAsset(symbol);
-                                              }
-                                              setLiveAssetOpen(false);
-                                            }}
-                                            className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-left transition-colors ${
-                                              (
-                                                isPrivateSale
-                                                  ? privateSale.selectedToken
-                                                      ?.symbol === symbol
-                                                  : liveAsset === symbol
-                                              )
-                                                ? isPrivateSale
-                                                  ? "bg-amber-50 text-amber-950"
-                                                  : "bg-indigo-50 text-indigo-700"
-                                                : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                          >
-                                            <img
-                                              src={
-                                                isPrivateSale
-                                                  ? TOKEN_LOGOS[symbol] ||
-                                                    TOKEN_LOGOS.USDC
-                                                  : LIVE_ASSET_LOGOS[symbol]
-                                              }
-                                              alt={symbol}
-                                              className="w-4 h-4 rounded-full"
-                                            />
-                                            {symbol}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                                    >
+                                      {p}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {isPrivateSale ? (
+                                <span className="text-sm text-gray-500">
+                                  Balance{" "}
+                                  <span className="font-semibold text-gray-700">
+                                    {!isConnected
+                                      ? `— ${privateSale.selectedToken?.symbol || ""}`
+                                      : privateSale.tokenBalanceLoading &&
+                                          !privateSale.tokenBalance
+                                        ? "Loading…"
+                                        : `${formatLiveBalance(
+                                            privateSale.tokenBalance?.amount,
+                                          )} ${
+                                            privateSale.tokenBalance?.symbol ||
+                                            privateSale.selectedToken?.symbol ||
+                                            ""
+                                          }`}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-sm text-gray-500">
+                                  Balance{" "}
+                                  <span className="font-semibold text-gray-700">
+                                    {!isConnected
+                                      ? `— ${liveAsset}`
+                                      : wlStatusLoading &&
+                                          !liveAssetBalanceKnown
+                                        ? "Loading…"
+                                        : `${formatLiveBalance(liveAssetBalanceUsd)} ${liveAsset}`}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {isPrivateSale &&
+                            privateSale.contributeResult?.status ===
+                              "pending" && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+                                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-700">
+                                  Confirming on-chain — this can take a few
+                                  minutes. Your position will update
+                                  automatically.
+                                </p>
+                              </div>
+                            )}
+
+                          {isPrivateSale &&
+                            privateSale.contributeResult?.status ===
+                              "verified" && (
+                              <div className="flex items-start gap-2 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                                <div>
+                                  <p className="text-xs font-semibold text-emerald-800">
+                                    Contribution verified!
+                                  </p>
+                                  {privateSale.contributeResult
+                                    .allocationTokens != null && (
+                                    <p className="text-xs text-emerald-700 mt-0.5">
+                                      Estimated allocation:{" "}
+                                      {formatCompactNumber(
+                                        privateSale.contributeResult
+                                          .allocationTokens,
+                                      )}{" "}
+                                      ALLOX
+                                    </p>
                                   )}
                                 </div>
                               </div>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
-                            <div className="flex flex-wrap gap-2">
-                              {LIVE_PRESETS.map((p) => {
-                                const v =
-                                  p === "MAX"
-                                    ? String(
-                                        isPrivateSale
-                                          ? privateMaxAmount
-                                          : liveMaxAmount,
-                                      )
-                                    : p.replace(/[$,]/g, "");
-                                const currentAmount = isPrivateSale
-                                  ? privateSale.amountUsd
-                                  : liveAmount;
-                                const active = currentAmount === v;
-                                const disabled =
-                                  p === "MAX" &&
-                                  (isPrivateSale
-                                    ? !isConnected ||
-                                      privateSale.tokenBalanceLoading ||
-                                      privateMaxAmount <= 0
-                                    : !isConnected ||
-                                      wlStatusLoading ||
-                                      liveMaxAmount <= 0);
-                                return (
-                                  <button
-                                    key={p}
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() =>
-                                      isPrivateSale
-                                        ? privateSale.setAmountUsd(v)
-                                        : setLiveAmount(v)
-                                    }
-                                    className={`min-w-[56px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
-                                      active
-                                        ? "bg-black text-white shadow-sm"
-                                        : "border-gray-200 bg-white/70 text-gray-700 hover:border-black-300 hover:bg-black/5"
-                                    }`}
-                                  >
-                                    {p}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {isPrivateSale ? (
-                              <span className="text-sm text-gray-500">
-                                Balance{" "}
-                                <span className="font-semibold text-gray-700">
-                                  {!isConnected
-                                    ? `— ${privateSale.selectedToken?.symbol || ""}`
-                                    : privateSale.tokenBalanceLoading &&
-                                        !privateSale.tokenBalance
-                                      ? "Loading…"
-                                      : `${formatLiveBalance(
-                                          privateSale.tokenBalance?.amount,
-                                        )} ${
-                                          privateSale.tokenBalance?.symbol ||
-                                          privateSale.selectedToken?.symbol ||
-                                          ""
-                                        }`}
-                                </span>
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-500">
-                                Balance{" "}
-                                <span className="font-semibold text-gray-700">
-                                  {!isConnected
-                                    ? `— ${liveAsset}`
-                                    : wlStatusLoading && !liveAssetBalanceKnown
-                                      ? "Loading…"
-                                      : `${formatLiveBalance(liveAssetBalanceUsd)} ${liveAsset}`}
-                                </span>
-                              </span>
                             )}
-                          </div>
-                        </div>
 
-                        {isPrivateSale &&
-                          privateSale.contributeResult?.status ===
-                            "pending" && (
-                            <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
-                              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0 mt-0.5" />
-                              <p className="text-xs text-blue-700">
-                                Confirming on-chain — this can take a few
-                                minutes. Your position will update
-                                automatically.
-                              </p>
-                            </div>
-                          )}
+                          {/* Public sale: Sonar purchase flow status */}
+                          {!isPrivateSale && isConnected && (
+                            <div className="flex flex-col gap-2">
+                              {publicCommittedUsd > 0 && (
+                                <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs">
+                                  <span className="text-gray-500">
+                                    Your current commitment
+                                  </span>
+                                  <span className="font-bold text-gray-900 tabular-nums">
+                                    $
+                                    {publicCommittedUsd.toLocaleString(
+                                      undefined,
+                                      { maximumFractionDigits: 2 },
+                                    )}
+                                    {liveNum > 0 && (
+                                      <span className="font-medium text-gray-500">
+                                        {" "}
+                                        → $
+                                        {(
+                                          publicCommittedUsd + liveNum
+                                        ).toLocaleString(undefined, {
+                                          maximumFractionDigits: 2,
+                                        })}{" "}
+                                        after this
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
 
-                        {isPrivateSale &&
-                          privateSale.contributeResult?.status ===
-                            "verified" && (
-                            <div className="flex items-start gap-2 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
-                              <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-xs font-semibold text-emerald-800">
-                                  Contribution verified!
-                                </p>
-                                {privateSale.contributeResult
-                                  .allocationTokens != null && (
-                                  <p className="text-xs text-emerald-700 mt-0.5">
-                                    Estimated allocation:{" "}
-                                    {formatCompactNumber(
-                                      privateSale.contributeResult
-                                        .allocationTokens,
-                                    )}{" "}
-                                    ALLOX
+                              {publicPurchase.saleInfoError && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-red-700">
+                                    {publicPurchase.saleInfoError}
                                   </p>
-                                )}
-                              </div>
-                            </div>
-                          )}
+                                </div>
+                              )}
 
-                        {/* Public sale: Sonar purchase flow status */}
-                        {!isPrivateSale && isConnected && (
-                          <div className="flex flex-col gap-2">
-                            {publicCommittedUsd > 0 && (
-                              <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs">
-                                <span className="text-gray-500">
-                                  Your current commitment
-                                </span>
-                                <span className="font-bold text-gray-900 tabular-nums">
-                                  $
-                                  {publicCommittedUsd.toLocaleString(
-                                    undefined,
-                                    { maximumFractionDigits: 2 },
-                                  )}
-                                  {liveNum > 0 && (
-                                    <span className="font-medium text-gray-500">
-                                      {" "}
-                                      → $
-                                      {(
-                                        publicCommittedUsd + liveNum
-                                      ).toLocaleString(undefined, {
-                                        maximumFractionDigits: 2,
-                                      })}{" "}
-                                      after this
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                            )}
+                              {publicPurchase.saleInfo?.saleUUIDMatches ===
+                                false && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-red-700">
+                                    The sale contract doesn't match this Sonar
+                                    sale. Commitments are disabled until this is
+                                    fixed.
+                                  </p>
+                                </div>
+                              )}
 
-                            {publicPurchase.saleInfoError && (
-                              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
-                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-red-700">
-                                  {publicPurchase.saleInfoError}
-                                </p>
-                              </div>
-                            )}
+                              {publicPurchase.saleInfo?.paused && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                                  <Clock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-gray-700">
+                                    The sale is paused. Commitments will reopen
+                                    when it resumes.
+                                  </p>
+                                </div>
+                              )}
 
-                            {publicPurchase.saleInfo?.saleUUIDMatches ===
-                              false && (
-                              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
-                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-red-700">
-                                  The sale contract doesn't match this Sonar
-                                  sale. Commitments are disabled until this is
-                                  fixed.
-                                </p>
-                              </div>
-                            )}
-
-                            {publicPurchase.saleInfo?.paused && (
-                              <div className="flex items-start gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl">
-                                <Clock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-gray-700">
-                                  The sale is paused. Commitments will reopen
-                                  when it resumes.
-                                </p>
-                              </div>
-                            )}
-
-                            {publicPurchase.failure && (
-                              <div
-                                className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border ${
-                                  publicPurchase.failure.tone === "red"
-                                    ? "bg-red-50 border-red-200"
-                                    : publicPurchase.failure.tone === "amber"
-                                      ? "bg-amber-50 border-amber-200"
-                                      : "bg-gray-50 border-gray-200"
-                                }`}
-                              >
-                                <AlertCircle
-                                  className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                              {publicPurchase.failure && (
+                                <div
+                                  className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border ${
                                     publicPurchase.failure.tone === "red"
-                                      ? "text-red-500"
+                                      ? "bg-red-50 border-red-200"
                                       : publicPurchase.failure.tone === "amber"
-                                        ? "text-amber-600"
-                                        : "text-gray-500"
+                                        ? "bg-amber-50 border-amber-200"
+                                        : "bg-gray-50 border-gray-200"
                                   }`}
-                                />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-gray-900">
-                                    {publicPurchase.failure.title}
-                                  </p>
-                                  <p className="text-xs text-gray-700 mt-0.5">
-                                    {publicPurchase.failure.detail}
-                                  </p>
-                                  <div className="flex flex-wrap gap-3 mt-1.5">
-                                    {publicPurchase.failure.action ===
-                                      "liveness" &&
-                                      publicPurchase.failure
-                                        .livenessCheckURL && (
+                                >
+                                  <AlertCircle
+                                    className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                      publicPurchase.failure.tone === "red"
+                                        ? "text-red-500"
+                                        : publicPurchase.failure.tone ===
+                                            "amber"
+                                          ? "text-amber-600"
+                                          : "text-gray-500"
+                                    }`}
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-gray-900">
+                                      {publicPurchase.failure.title}
+                                    </p>
+                                    <p className="text-xs text-gray-700 mt-0.5">
+                                      {publicPurchase.failure.detail}
+                                    </p>
+                                    <div className="flex flex-wrap gap-3 mt-1.5">
+                                      {publicPurchase.failure.action ===
+                                        "liveness" &&
+                                        publicPurchase.failure
+                                          .livenessCheckURL && (
+                                          <a
+                                            href={
+                                              publicPurchase.failure
+                                                .livenessCheckURL
+                                            }
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                          >
+                                            Start liveness check
+                                            <ExternalLink className="w-3 h-3" />
+                                          </a>
+                                        )}
+                                      {publicPurchase.failure.action ===
+                                        "sonar" && (
                                         <a
-                                          href={
-                                            publicPurchase.failure
-                                              .livenessCheckURL
-                                          }
+                                          href={publicPurchase.sonarHomeUrl}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                                         >
-                                          Start liveness check
+                                          Open Sonar
                                           <ExternalLink className="w-3 h-3" />
                                         </a>
                                       )}
-                                    {publicPurchase.failure.action ===
-                                      "sonar" && (
+                                      {publicPurchase.failure.action ===
+                                        "switchWallet" && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            dispatch(setWalletModal(true))
+                                          }
+                                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                        >
+                                          Connect a different wallet
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={publicPurchase.clearResult}
+                                        className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                                      >
+                                        Dismiss
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {publicPurchase.error && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-red-700 break-words min-w-0">
+                                    {publicPurchase.error}
+                                  </p>
+                                </div>
+                              )}
+
+                              {publicPurchase.busy && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+                                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-blue-700">
+                                    {PURCHASE_STEP_LABELS[publicPurchase.step]}
+                                    {publicPurchase.step === "approving" &&
+                                      " This lets the sale contract take the amount you're committing."}
+                                  </p>
+                                </div>
+                              )}
+
+                              {publicPurchase.step === "success" && (
+                                <div className="flex items-start gap-2 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                  <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-emerald-800">
+                                      Commitment confirmed
+                                      {lastPublicTx?.status && (
+                                        <span className="ml-1.5 font-medium capitalize text-emerald-700">
+                                          · {lastPublicTx.status}
+                                        </span>
+                                      )}
+                                    </p>
+                                    {publicPurchase.lastTxHash && (
                                       <a
-                                        href={publicPurchase.sonarHomeUrl}
+                                        href={
+                                          lastPublicTx?.explorerUrl ||
+                                          `${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`
+                                        }
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-0.5"
                                       >
-                                        Open Sonar
+                                        View on Etherscan
                                         <ExternalLink className="w-3 h-3" />
                                       </a>
                                     )}
-                                    {publicPurchase.failure.action ===
-                                      "switchWallet" && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          dispatch(setWalletModal(true))
-                                        }
-                                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                                      >
-                                        Connect a different wallet
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={publicPurchase.clearResult}
-                                      className="text-xs font-semibold text-gray-500 hover:text-gray-700"
-                                    >
-                                      Dismiss
-                                    </button>
                                   </div>
                                 </div>
-                              </div>
-                            )}
-
-                            {publicPurchase.error && (
-                              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
-                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-red-700 break-words min-w-0">
-                                  {publicPurchase.error}
-                                </p>
-                              </div>
-                            )}
-
-                            {publicPurchase.busy && (
-                              <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
-                                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-blue-700">
-                                  {PURCHASE_STEP_LABELS[publicPurchase.step]}
-                                  {publicPurchase.step === "approving" &&
-                                    " This lets the sale contract take the amount you're committing."}
-                                </p>
-                              </div>
-                            )}
-
-                            {publicPurchase.step === "success" && (
-                              <div className="flex items-start gap-2 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
-                                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-emerald-800">
-                                    Commitment confirmed
-                                    {lastPublicTx?.status && (
-                                      <span className="ml-1.5 font-medium capitalize text-emerald-700">
-                                        · {lastPublicTx.status}
-                                      </span>
-                                    )}
-                                  </p>
-                                  {publicPurchase.lastTxHash && (
-                                    <a
-                                      href={
-                                        lastPublicTx?.explorerUrl ||
-                                        `${TX_EXPLORERS[PUBLIC_SALE_CHAIN_NAME]}${publicPurchase.lastTxHash}`
-                                      }
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-0.5"
-                                    >
-                                      View on Etherscan
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Eligibility status for the selected entity.
-                            Only KYC-verified, eligible entities can buy in the live sale. */}
-                        {!isPrivateSale &&
-                          isConnected &&
-                          sonar.configured &&
-                          sonar.authenticated && (
-                            <SonarStatusInline
-                              status={sonar.status}
-                              entity={sonar.activeEntity}
-                              onDisconnect={sonar.logout}
-                              loading={sonar.entitiesLoading}
-                              error={sonar.entitiesError}
-                              showEligible
-                            />
+                              )}
+                            </div>
                           )}
 
-                        {/* Sonar requires telling U.S. investors about the
-                            forced lockup their commitments carry. */}
-                        {!isPrivateSale && publicPurchase.requiresLockup && (
-                          <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3">
-                            <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                            <p className="text-xs text-gray-700">
-                              <span className="font-bold text-gray-900">
-                                Lockup applies to U.S. investors.
-                              </span>{" "}
-                              Your tokens will be subject to a mandatory vesting
-                              lockup, in addition to your plan's schedule. See
-                              section 6.3 of the{" "}
-                              <button
-                                type="button"
-                                onClick={() => setLiveTermsOpen(true)}
-                                className="underline font-semibold"
-                              >
-                                Sale Terms
-                              </button>
-                              .
-                            </p>
-                          </div>
-                        )}
+                          {/* Eligibility status for the selected entity.
+                            Only KYC-verified, eligible entities can buy in the live sale. */}
+                          {!isPrivateSale &&
+                            isConnected &&
+                            sonar.configured &&
+                            sonar.authenticated && (
+                              <SonarStatusInline
+                                status={sonar.status}
+                                entity={sonar.activeEntity}
+                                onDisconnect={sonar.logout}
+                                loading={sonar.entitiesLoading}
+                                error={sonar.entitiesError}
+                                showEligible
+                              />
+                            )}
 
-                        {/* CTA */}
-                        <button
-                          type="button"
-                          disabled={
-                            publicSaleEnded
-                              ? true
-                              : isPrivateSale && privateSale.contributing
-                              ? true
-                              : isPrivateSale && !isConnected
-                                ? false
-                                : isPrivateSale &&
-                                    isConnected &&
-                                    !isAuthenticated
-                                  ? false
-                                  : !isPrivateSale && !isConnected
+                          {/* Sonar requires telling U.S. investors about the
+                            forced lockup their commitments carry. */}
+                          {!isPrivateSale && publicPurchase.requiresLockup && (
+                            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3">
+                              <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <p className="text-xs text-gray-700">
+                                <span className="font-bold text-gray-900">
+                                  Lockup applies to U.S. investors.
+                                </span>{" "}
+                                Your tokens will be subject to a mandatory
+                                vesting lockup, in addition to your plan's
+                                schedule. See section 6.3 of the{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => setLiveTermsOpen(true)}
+                                  className="underline font-semibold"
+                                >
+                                  Sale Terms
+                                </button>
+                                .
+                              </p>
+                            </div>
+                          )}
+
+                          {/* CTA */}
+                          <button
+                            type="button"
+                            disabled={
+                              publicSaleEnded
+                                ? true
+                                : isPrivateSale && privateSale.contributing
+                                  ? true
+                                  : isPrivateSale && !isConnected
                                     ? false
-                                    : !isPrivateSale && needsSonarConnect
-                                      ? !sonar.ready
-                                      : !isPrivateSale &&
-                                          (needsSaleChainSwitch ||
-                                            sonarNeedsSonarStep)
+                                    : isPrivateSale &&
+                                        isConnected &&
+                                        !isAuthenticated
+                                      ? false
+                                      : !isPrivateSale && !isConnected
                                         ? false
-                                        : !liveCanSubmit ||
-                                          (isPrivateSale &&
-                                            privateSale.contributing)
-                          }
-                          onClick={() => {
-                            if (publicSaleEnded) return;
-                            if (!isPrivateSale) {
+                                        : !isPrivateSale && needsSonarConnect
+                                          ? !sonar.ready
+                                          : !isPrivateSale &&
+                                              (needsSaleChainSwitch ||
+                                                sonarNeedsSonarStep)
+                                            ? false
+                                            : !liveCanSubmit ||
+                                              (isPrivateSale &&
+                                                privateSale.contributing)
+                            }
+                            onClick={() => {
+                              if (publicSaleEnded) return;
+                              if (!isPrivateSale) {
+                                if (!isConnected) {
+                                  dispatch(setWalletModal(true));
+                                  return;
+                                }
+                                if (needsSonarConnect) {
+                                  sonar.connectSonar();
+                                  return;
+                                }
+                                if (needsSaleChainSwitch) {
+                                  switchToSaleChain();
+                                  return;
+                                }
+                                if (sonarNeedsSonarStep) {
+                                  openSonar();
+                                  return;
+                                }
+                                if (!liveCanSubmit) return;
+                                publicPurchase
+                                  .commit({
+                                    amountUsd: liveAmount,
+                                    tokenSymbol: liveAsset,
+                                    tierId: livePlan?.tierId,
+                                  })
+                                  .then((ok) => {
+                                    if (!ok) return;
+                                    setLiveAmount("");
+                                    publicSale.refreshPosition();
+                                  });
+                                return;
+                              }
                               if (!isConnected) {
                                 dispatch(setWalletModal(true));
                                 return;
                               }
-                              if (needsSonarConnect) {
-                                sonar.connectSonar();
+                              if (!isAuthenticated) {
+                                ensureAuthenticated();
                                 return;
                               }
-                              if (needsSaleChainSwitch) {
-                                switchToSaleChain();
-                                return;
-                              }
-                              if (sonarNeedsSonarStep) {
-                                openSonar();
-                                return;
-                              }
-                              if (!liveCanSubmit) return;
-                              publicPurchase
-                                .commit({
-                                  amountUsd: liveAmount,
-                                  tokenSymbol: liveAsset,
-                                  tierId: livePlan?.tierId,
-                                })
-                                .then((ok) => {
-                                  if (!ok) return;
-                                  setLiveAmount("");
-                                  publicSale.refreshPosition();
-                                });
-                              return;
-                            }
-                            if (!isConnected) {
-                              dispatch(setWalletModal(true));
-                              return;
-                            }
-                            if (!isAuthenticated) {
-                              ensureAuthenticated();
-                              return;
-                            }
-                            privateSale.contribute();
-                          }}
-                          className={`w-full font-bold py-4 rounded-2xl text-base transition-all duration-200 ${
-                            publicSaleEnded
-                              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                              : (!isPrivateSale && !isConnected) ||
-                            (!isPrivateSale &&
-                              isConnected &&
-                              !isAuthenticated) ||
-                            (!isPrivateSale &&
-                              isConnected &&
-                              (needsSonarConnect ||
-                                needsSaleChainSwitch ||
-                                sonarNeedsSonarStep ||
-                                liveCanSubmit)) ||
-                            (liveCanSubmit && !privateSale.contributing)
-                              ? "bg-black text-white hover:bg-gray-800 active:scale-[0.99]"
-                              : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                          }`}
-                        >
-                          {publicSaleEnded
-                            ? "Public sale ended"
-                            : isPrivateSale && privateSale.contributing
-                            ? "Processing…"
-                            : !isPrivateSale && publicPurchase.busy
-                              ? PURCHASE_STEP_LABELS[publicPurchase.step] ||
-                                "Processing…"
-                              : isPrivateSale && !isConnected
-                                ? "Connect Wallet"
-                                : isPrivateSale && !isAuthenticated
-                                  ? "Sign In"
-                                  : !isPrivateSale && !isConnected
+                              privateSale.contribute();
+                            }}
+                            className={`w-full font-bold py-4 rounded-2xl text-base transition-all duration-200 ${
+                              publicSaleEnded
+                                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                                : (!isPrivateSale && !isConnected) ||
+                                    (!isPrivateSale &&
+                                      isConnected &&
+                                      !isAuthenticated) ||
+                                    (!isPrivateSale &&
+                                      isConnected &&
+                                      (needsSonarConnect ||
+                                        needsSaleChainSwitch ||
+                                        sonarNeedsSonarStep ||
+                                        liveCanSubmit)) ||
+                                    (liveCanSubmit && !privateSale.contributing)
+                                  ? "bg-black text-white hover:bg-gray-800 active:scale-[0.99]"
+                                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                            }`}
+                          >
+                            {publicSaleEnded
+                              ? "Public sale ended"
+                              : isPrivateSale && privateSale.contributing
+                                ? "Processing…"
+                                : !isPrivateSale && publicPurchase.busy
+                                  ? PURCHASE_STEP_LABELS[publicPurchase.step] ||
+                                    "Processing…"
+                                  : isPrivateSale && !isConnected
                                     ? "Connect Wallet"
-                                    : !isPrivateSale && needsSonarConnect
-                                      ? "Connect with Sonar"
-                                      : !isPrivateSale && needsSaleChainSwitch
-                                        ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
-                                        : !isPrivateSale && sonarBlockedLabel
-                                          ? sonarBlockedLabel
+                                    : isPrivateSale && !isAuthenticated
+                                      ? "Sign In"
+                                      : !isPrivateSale && !isConnected
+                                        ? "Connect Wallet"
+                                        : !isPrivateSale && needsSonarConnect
+                                          ? "Connect with Sonar"
                                           : !isPrivateSale &&
-                                              publicPurchase.saleInfo?.paused
-                                            ? "Sale paused"
+                                              needsSaleChainSwitch
+                                            ? `Switch to ${PUBLIC_SALE_CHAIN_NAME}`
                                             : !isPrivateSale &&
-                                                liveNum > 0 &&
-                                                liveInsufficientBalance
-                                              ? `Insufficient ${liveAsset} balance`
-                                              : isPrivateSale &&
-                                                  !privateSale.saleActive
-                                                ? privateSale.saleEnded
-                                                  ? "Sale Ended"
-                                                  : "Sale Not Active"
-                                                : liveNum <= 0
-                                                  ? "Enter Amount"
-                                                  : liveNum < liveMinUsd
-                                                    ? `Minimum is $${liveMinUsd.toLocaleString()}`
-                                                    : liveNum > liveMaxUsd
-                                                      ? "Amount exceeds maximum"
-                                                      : "Invest"}
-                        </button>
-                      </>
-                    </div>
+                                                sonarBlockedLabel
+                                              ? sonarBlockedLabel
+                                              : !isPrivateSale &&
+                                                  publicPurchase.saleInfo
+                                                    ?.paused
+                                                ? "Sale paused"
+                                                : !isPrivateSale &&
+                                                    liveNum > 0 &&
+                                                    liveInsufficientBalance
+                                                  ? `Insufficient ${liveAsset} balance`
+                                                  : isPrivateSale &&
+                                                      !privateSale.saleActive
+                                                    ? privateSale.saleEnded
+                                                      ? "Sale Ended"
+                                                      : "Sale Not Active"
+                                                    : liveNum <= 0
+                                                      ? "Enter Amount"
+                                                      : liveNum < liveMinUsd
+                                                        ? `Minimum is $${liveMinUsd.toLocaleString()}`
+                                                        : liveNum > liveMaxUsd
+                                                          ? "Amount exceeds maximum"
+                                                          : "Invest"}
+                          </button>
+                        </>
+                      </div>
+                    )}
 
                     {/* Right — estimated allocation */}
                     <div className="lg:col-span-5 glass-card p-5 md:p-6 flex flex-col gap-5 relative overflow-visible">
@@ -4176,7 +4340,9 @@ export function PublicSaleSonarPage() {
                           ref={investHistoryPopupRef}
                         >
                           <span className="text-sm font-semibold text-gray-500">
-                            Estimated allocation
+                            {publicSaleEnded
+                              ? "Your allocation"
+                              : "Estimated allocation"}
                           </span>
                           <button
                             type="button"
@@ -4192,12 +4358,19 @@ export function PublicSaleSonarPage() {
                             aria-expanded={investHistoryOpen}
                           >
                             <HelpCircle className="w-3.5 h-3.5" />
-                            {isPrivateSale &&
-                              privatePositionContributions.length > 0 && (
-                                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-indigo-500 text-white text-[9px] font-bold leading-none flex items-center justify-center">
-                                  {privatePositionContributions.length}
-                                </span>
-                              )}
+                            {(isPrivateSale
+                              ? privatePositionContributions
+                              : publicInvestments
+                            ).length > 0 && (
+                              <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-indigo-500 text-white text-[9px] font-bold leading-none flex items-center justify-center">
+                                {
+                                  (isPrivateSale
+                                    ? privatePositionContributions
+                                    : publicInvestments
+                                  ).length
+                                }
+                              </span>
+                            )}
                           </button>
 
                           <AnimatePresence>
@@ -4384,41 +4557,75 @@ export function PublicSaleSonarPage() {
                         </button>
                       </div>
 
-                      <div className="relative">
-                        {livePlan ? (
-                          <motion.div
-                            key={livePlan.id}
-                            initial={{ opacity: 0, y: 4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <div className="text-2xl font-bold text-gray-900">
-                              {livePlan.name}
-                            </div>
-                            <div className="text-sm text-gray-400 mt-0.5">
-                              ${(livePlan.fdv / 1_000_000).toFixed(0)}M FDV
-                            </div>
-                          </motion.div>
-                        ) : (
-                          <div className="h-14 rounded-xl bg-gray-50 animate-pulse" />
-                        )}
-                      </div>
+                      {publicSaleEnded && (
+                        <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+                          {[...activePlans].reverse().map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setLivePlanId(p.id)}
+                              aria-pressed={livePlan?.id === p.id}
+                              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                                livePlan?.id === p.id
+                                  ? "bg-white text-gray-900 shadow-sm"
+                                  : "text-gray-500 hover:text-gray-800"
+                              }`}
+                            >
+                              {p.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {publicSaleEnded && !isAuthenticated && (
+                        <button
+                          type="button"
+                          onClick={signInForReferral}
+                          className="text-left text-xs font-semibold text-indigo-600 hover:underline"
+                        >
+                          {isConnected
+                            ? "Sign in with your wallet to see your allocation"
+                            : "Connect your wallet to see your allocation"}
+                        </button>
+                      )}
+
+                      {!publicSaleEnded && (
+                        <div className="relative">
+                          {livePlan ? (
+                            <motion.div
+                              key={livePlan.id}
+                              initial={{ opacity: 0, y: 4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <div className="text-2xl font-bold text-gray-900">
+                                {livePlan.name}
+                              </div>
+                              <div className="text-sm text-gray-400 mt-0.5">
+                                ${(livePlan.fdv / 1_000_000).toFixed(0)}M FDV
+                              </div>
+                            </motion.div>
+                          ) : (
+                            <div className="h-14 rounded-xl bg-gray-50 animate-pulse" />
+                          )}
+                        </div>
+                      )}
 
                       <div className="relative pl-3.5 border-l-[3px] border-indigo-500">
                         <div className="text-3xl md:text-4xl font-bold text-gray-900 tabular-nums tracking-tight">
-                          {hasPosition && liveNum <= 0
+                          {(hasPosition || publicSaleEnded) && liveNum <= 0
                             ? formatCompactNumber(positionTokens)
                             : liveAllox}{" "}
                           ALLOX
                         </div>
                         <div className="mt-2 text-sm text-gray-500">
-                          {hasPosition && liveNum <= 0
+                          {(hasPosition || publicSaleEnded) && liveNum <= 0
                             ? isPrivateSale
                               ? `Your ${livePlan?.name || "tier"} contribution`
                               : "Your commitment"
                             : "Contribution preview"}{" "}
                           <span className="font-bold text-gray-900">
-                            {hasPosition && liveNum <= 0
+                            {(hasPosition || publicSaleEnded) && liveNum <= 0
                               ? `$${positionUsd.toLocaleString(undefined, {
                                   maximumFractionDigits: 2,
                                 })}`
@@ -4496,12 +4703,16 @@ export function PublicSaleSonarPage() {
                               },
                               {
                                 icon: Zap,
-                                label: "Available at TGE (estimated)",
+                                label: publicSaleEnded
+                                  ? "Available at TGE"
+                                  : "Available at TGE (estimated)",
                                 value: `${liveTgeTokens} ALLOX`,
                               },
                               {
                                 icon: Lock,
-                                label: "Locked (estimated)",
+                                label: publicSaleEnded
+                                  ? "Locked"
+                                  : "Locked (estimated)",
                                 value: `${liveLockedTokens} ALLOX`,
                               },
                               {
@@ -5005,10 +5216,11 @@ export function PublicSaleSonarPage() {
                 </span>
               </div>
               <h3 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight">
-              What we've built so far
+                What we've built so far
               </h3>
               <p className="mt-3 text-sm sm:text-base text-white/50 leading-relaxed max-w-2xl">
-                We launched in February 2026 and haven't stopped shipping. Here's where we are today.
+                We launched in February 2026 and haven't stopped shipping.
+                Here's where we are today.
               </p>
             </div>
 
@@ -5696,13 +5908,14 @@ export function PublicSaleSonarPage() {
               <div className="flex flex-col md:flex-row md:items-center gap-8">
                 <div className="flex-1">
                   <h3 className="text-3xl font-bold text-white leading-tight mb-3">
-                   Our numbers 
+                    Our numbers
                   </h3>
                   <p
                     className="text-sm mb-5"
                     style={{ color: "rgba(255,255,255,0.45)" }}
                   >
-                    Live figures from our platform. Nothing here is a projection.
+                    Live figures from our platform. Nothing here is a
+                    projection.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-10 gap-y-7 flex-shrink-0">
@@ -5960,7 +6173,7 @@ export function PublicSaleSonarPage() {
                 className="text-xs font-bold uppercase tracking-widest mb-4"
                 style={{ color: "rgba(255,255,255,0.3)" }}
               >
-               WHY PEOPLE USE ALLOX
+                WHY PEOPLE USE ALLOX
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {CREDIBILITY.map((point, i) => (
@@ -6035,7 +6248,8 @@ export function PublicSaleSonarPage() {
                   We're not starting from zero.
                 </h3>
                 <p className="mt-3 text-sm sm:text-base text-white/50 leading-relaxed">
-                This sale is backed by the revenue, users and volume we already have in production.
+                  This sale is backed by the revenue, users and volume we
+                  already have in production.
                 </p>
               </div>
               <div
